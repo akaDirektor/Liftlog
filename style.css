@@ -55,3 +55,9 @@ input[type=number]{font-size:max(16px,calc(12px * var(--font-scale,1.15)))}
  .total-footer{font-size:calc(11px * var(--font-scale,1.15))}
  .cycle-mini .eyebrow,.eyebrow{font-size:calc(11px * var(--font-scale,1.15))}
 }
+
+.delete-set{display:block;margin:2px auto;color:#a34e4e;border-radius:6px;min-width:28px;min-height:28px;font-size:20px;line-height:1}
+.delete-set:hover{background:#fff0ef}
+.library-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.library-actions .danger{color:#a34e4e}
+@media(max-width:650px){.delete-set{min-height:36px;min-width:28px}.library-actions{gap:5px}.library-actions button{min-height:44px}.library-row{align-items:flex-start}}
