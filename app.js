@@ -22,7 +22,7 @@ function prepareSet(x){
 function change(i,j,k,el){
  const x=session().exercises[i].sets[j];
  let v=el.value===''?'':Number(el.value);
- if(v!==''&&(!Number.isFinite(v)||v<0||v>Number(el.max)||(k[1]==='r'&&!Number.isInteger(v)))){el.value=x[k];toast('Перевір значення');return}
+ if(v!==''&&(!Number.isFinite(v)||v<Number(el.min||0)||v>Number(el.max)||(k[1]==='r'&&!Number.isInteger(v)))){el.value=x[k];toast('Перевір значення');return}
  x[k]=v;
  if(k[0]==='f')x[k+'Manual']=true;
  if(k[0]==='p'&&!x.done){
