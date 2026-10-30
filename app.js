@@ -17,17 +17,33 @@ function toggleHistoryKind(kind){
  render();
 }
 function selectedHistory(){return state.history.filter(h=>historyKinds.includes(h.kind))}
-function progressCharts(){
- const selected=selectedHistory(),groups=new Map();
+let trendMode='cycle',trendCycle=null;
+function trendDate(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
+function mondayOf(date){const d=new Date(date+'T12:00:00');d.setDate(d.getDate()-((d.getDay()+6)%7));return d}
+function trendWeeks(selected,mode=trendMode,cycle=trendCycle??state.cycle,today=localDate()){
+ let weeks;
+ if(mode==='recent'){
+  const monday=mondayOf(today);
+  weeks=Array.from({length:6},(_,i)=>{const d=new Date(monday);d.setDate(d.getDate()-(5-i)*7);const end=new Date(d);end.setDate(end.getDate()+6);return {label:'Тиждень '+(i+1),dateLabel:String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0'),start:trendDate(d),end:trendDate(end),current:i===5,plan:0,fact:0,count:0,kinds:[]}});
+ }else weeks=Array.from({length:6},(_,i)=>({label:'Тиждень '+(i+1),week:i+1,cycle:Number(cycle),current:Number(cycle)===state.cycle&&i+1===state.week,plan:0,fact:0,count:0,kinds:[]}));
  selected.forEach(h=>{
- const id=h.cycle+'-'+h.week;
- if(!groups.has(id))groups.set(id,{cycle:h.cycle,week:h.week,plan:0,fact:0,count:0});
- const g=groups.get(id);g.plan+=Number(h.plan)||0;g.fact+=Number(h.fact)||0;g.count++;
+  const w=mode==='recent'?weeks.find(x=>h.date>=x.start&&h.date<=x.end):weeks.find(x=>Number(h.cycle)===x.cycle&&Number(h.week)===x.week);
+  if(!w)return;w.plan+=Number(h.plan)||0;w.fact+=Number(h.fact)||0;w.count++;if(!w.kinds.includes(h.kind))w.kinds.push(h.kind);
  });
- const weeks=[...groups.values()].sort((a,b)=>a.cycle-b.cycle||a.week-b.week),max=Math.max(1,...weeks.map(x=>x.fact));
- return '<div class="grid"><section class="card"><h2>Сумарний тоннаж за тижнями</h2><p>'+esc(historySelectionLabel())+'</p>'+
- (weeks.length?'<div class="spark" style="height:220px;margin-bottom:55px">'+weeks.slice(-12).map(x=>'<div style="height:'+x.fact/max*100+'%" title="Цикл '+x.cycle+', тиждень '+x.week+': '+fmt(x.fact)+' кг"><label>'+x.cycle+'.'+x.week+'</label></div>').join('')+'</div><table class="wide-table"><tr><th>ЦИКЛ / ТИЖДЕНЬ</th><th>ТРЕНУВАНЬ</th><th>ПЛАН</th><th>ФАКТ</th></tr>'+weeks.slice().reverse().map(x=>'<tr><td>'+x.cycle+' / '+x.week+'</td><td>'+x.count+'</td><td>'+fmt(x.plan)+' кг</td><td><b>'+fmt(x.fact)+' кг</b></td></tr>').join('')+'</table>':'<div class="empty"><p>'+(historyKinds.length?'Немає записів для вибраних тренувань.':'Вибери один або обидва типи тренувань.')+'</p></div>')+
- '</section><section class="card history-summary" style="align-self:start"><span class="eyebrow">СУМАРНИЙ ТОННАЖ · ЗА ВЕСЬ ЧАС</span><div class="big">'+fmt(selected.reduce((sum,h)=>sum+Number(h.fact||0),0))+' <span>кг</span></div><p>'+esc(historySelectionLabel())+'</p><div class="statline"><span>Тренувань</span><b>'+selected.length+'</b></div><div class="statline"><span>Найкращий тоннаж за тиждень</span><b>'+fmt(Math.max(0,...weeks.map(x=>x.fact)))+' кг</b></div></section></div>';
+ return weeks;
+}
+function progressCharts(){
+ const selected=selectedHistory(),cycle=trendCycle??state.cycle,weeks=trendWeeks(selected),peak=Math.max(1,...weeks.map(x=>x.fact)),ceiling=Math.ceil(peak/1000)*1000;
+ const cycles=[...new Set([state.cycle,...state.history.map(h=>Number(h.cycle))])].sort((a,b)=>a-b);
+ const observed=weeks.filter(w=>w.count),first=observed[0],last=observed.at(-1),canCompare=observed.length>=2&&first.fact>0;
+ const delta=canCompare?(last.fact-first.fact)/first.fact*100:null,windowSum=weeks.reduce((s,w)=>s+w.fact,0);
+ return '<div class="grid"><section class="card"><div class="trend-heading"><div><h2>Динаміка за 6 тижнів</h2><p>'+esc(historySelectionLabel())+'</p></div><div class="trend-controls"><select aria-label="Період графіка" onchange="trendMode=this.value;render()"><option value="cycle" '+(trendMode==='cycle'?'selected':'')+'>Шеститижневий цикл</option><option value="recent" '+(trendMode==='recent'?'selected':'')+'>Останні 6 календарних тижнів</option></select>'+
+ (trendMode==='cycle'?'<select aria-label="Цикл графіка" onchange="trendCycle=Number(this.value);render()">'+cycles.map(c=>'<option value="'+c+'" '+(Number(cycle)===c?'selected':'')+'>Цикл '+c+'</option>').join('')+'</select>':'')+'</div></div>'+
+ '<div class="trend-caption">'+(trendMode==='cycle'?'Тижні 1–6 циклу '+cycle+'. Тиждень 7 — полегшений; його записи залишаються в історії.':'Тижні від понеділка до неділі, включно з поточним.')+'</div>'+
+ '<div class="tonnage-chart" role="img" aria-label="Тоннаж за шість тижнів у кілограмах"><div class="chart-axis"><span>'+fmt(ceiling)+' кг</span><span>'+fmt(ceiling/2)+'</span><span>0</span></div><div class="chart-columns">'+weeks.map(w=>'<div class="chart-week '+(w.current?'is-current':'')+'"><div class="chart-slot">'+(w.count?'<span class="chart-value">'+fmt(w.fact)+'</span><div class="chart-bar" style="height:'+Math.max(1,w.fact/ceiling*100)+'%" title="'+esc(w.label+(w.start?' '+w.start+' — '+w.end:''))+': '+fmt(w.fact)+' кг · '+w.count+' тренувань"></div>':'<span class="chart-no-data">—</span>')+'</div><b>'+w.label+'</b><small>'+(w.dateLabel||'')+(w.current?' · зараз':'')+'</small><small>'+(w.count?w.count+' трен.':'Немає даних')+'</small></div>').join('')+'</div></div>'+
+ '<div class="trend-insight">'+(canCompare?'<b>'+(delta>=0?'+':'')+fmt(delta)+'%</b> · '+esc(last.label)+' проти '+esc(first.label)+'. Порівняння записаного тоннажу; неповні тижні можуть давати нижчу суму.':'Для оцінки динаміки потрібні записи щонайменше за два тижні. Порожні тижні не вважаються нульовим результатом.')+'</div>'+
+ '<table class="wide-table"><tr><th>ТИЖДЕНЬ</th><th>ТРЕНУВАНЬ</th><th>ФАКТ, КГ</th></tr>'+weeks.map(w=>'<tr><td>'+w.label+(w.dateLabel?' · '+w.dateLabel:'')+'</td><td>'+w.count+'</td><td>'+(w.count?'<b>'+fmt(w.fact)+'</b>':'—')+'</td></tr>').join('')+'</table></section>'+
+ '<section class="card history-summary" style="align-self:start"><span class="eyebrow">СУМАРНИЙ ТОННАЖ · ЗА ВЕСЬ ЧАС</span><div class="big">'+fmt(selected.reduce((s,h)=>s+Number(h.fact||0),0))+' <span>кг</span></div><p>'+esc(historySelectionLabel())+'</p><div class="statline"><span>За вибрані 6 тижнів</span><b>'+fmt(windowSum)+' кг</b></div><div class="statline"><span>Тренувань за весь час</span><b>'+selected.length+'</b></div></section></div>';
 }
 function cycle(){return `<section class="card"><div class="row"><div><h2>Цикл ${state.cycle} · 6 + 1</h2><p style="font-size:12px">Два тренування щотижня: спина та груди.</p></div><span class="badge">Тиждень ${state.week}</span></div><div class="cycle-grid">${Array.from({length:7},(_,i)=>`<button class="cycle-box ${state.week===i+1?'active':''}" onclick="setWeek(${i+1})"><span class="eyebrow">ТИЖДЕНЬ ${i+1}</span><b>${i===6?'−40%':'+'+i*2.5+'%'}</b><small>${i===6?'Відновлення':'Від базової ваги'}</small></button>`).join('')}</div><div class="note">Це початкова схема для перегляду: +2,5% від базової ваги щотижня, на 7-му тижні — 60% базової ваги. План будь-якого підходу можна змінити вручну: додати вагу або повтори. Наступний цикл починається з базових значень бібліотеки — їх можна оновити під свій прогрес.</div><button class="secondary" style="margin-top:22px" onclick="nextCycle()">Почати наступний цикл →</button></section>`}function nextCycle(){modal(`<h2>Новий цикл</h2><p>Почати цикл ${state.cycle+1} з першого тижня? Попередні тренування залишаться в історії.</p><button class="primary" id="next">Почати цикл</button><button class="secondary" onclick="$('#dialog').close()">Скасувати</button>`);$('#next').onclick=()=>{state.cycle++;state.week=1;$('#dialog').close();render()}}
 
