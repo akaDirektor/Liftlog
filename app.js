@@ -438,8 +438,17 @@ function renderRestTimer(){
 function syncRestPanel(){
  const host=document.querySelector('#rest-timer');if(!host||!host.classList.contains('rest-docked'))return;
  const column=document.querySelector('.grid>.right');
- if(column){const rect=column.getBoundingClientRect();host.style.setProperty('--rest-left',rect.left+'px');host.style.setProperty('--rest-width',rect.width+'px')}
- else{host.classList.remove('rest-docked')}
+ if(column){
+  const rect=column.getBoundingClientRect(),summary=column.querySelector('.total');
+  host.style.setProperty('--rest-left',rect.left+'px');host.style.setProperty('--rest-width',rect.width+'px');
+  let top=16;
+  if(summary){
+   summary.style.setProperty('--summary-left',rect.left+'px');summary.style.setProperty('--summary-width',rect.width+'px');
+   top=16+summary.getBoundingClientRect().height+12;
+  }
+  host.style.setProperty('--rest-top',top+'px');
+  host.style.setProperty('--rest-height',Math.max(140,window.innerHeight-top-16)+'px');
+ }else{host.classList.remove('rest-docked')}
 }
 window.addEventListener('resize',()=>renderRestTimer());
 window.addEventListener('scroll',()=>syncRestPanel(),{passive:true});
