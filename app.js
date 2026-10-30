@@ -351,20 +351,21 @@ function changeRestTarget(value){
 
 function minimizeRestTimer(){
  if(!state.restTimer)return;
- state.restTimer.minimized=true;save();renderRestTimer();
+ state.restTimer.minimized=true;state.restTimer.mobileExpanded=false;save();renderRestTimer();
 }
-function expandRestTimer(){if(!state.restTimer)return;enableRestAudio();state.restTimer.minimized=false;save();renderRestTimer()}
+function expandRestTimer(){if(!state.restTimer)return;enableRestAudio();state.restTimer.minimized=false;state.restTimer.mobileExpanded=true;save();renderRestTimer()}
 function renderRestTimer(){
  const host=document.querySelector('#rest-timer');if(!host)return;
  const t=state.restTimer;host.hidden=!t;
- if(!t){host.innerHTML='';host.classList.remove('rest-fullscreen');return}
+ if(!t){host.innerHTML='';host.classList.remove('rest-fullscreen','rest-docked');host.style.removeProperty('--rest-left');host.style.removeProperty('--rest-width');return}
  const target=(t.targetSeconds||150)*1000,elapsed=restElapsed(t),stopped=t.status==='stopped',overtime=elapsed>=target;
- const full=!t.minimized&&!stopped;
- host.classList.toggle('rest-fullscreen',full);
+ const dock=window.innerWidth>1000&&tab==='workout'&&!t.minimized;
+ const full=window.innerWidth<=1000&&t.mobileExpanded&&!t.minimized&&!stopped;
+ host.classList.toggle('rest-fullscreen',full);host.classList.toggle('rest-docked',dock);
  host.dataset.status=stopped?'stopped':!t.running?'paused':overtime?'overtime':'running';
  const label=stopped?'Відпочинок завершено':!t.running?'Пауза':overtime?'Час вийшов — відпочинок триває':'Відпочинок';
  host.innerHTML='<div class="rest-timer-inner"><div class="rest-timer-heading"><b>'+label+'</b>'+
- (stopped?'<button type="button" aria-label="Закрити таймер" onclick="dismissRestTimer()">×</button>':full?'<button type="button" aria-label="Згорнути таймер без зупинки" onclick="minimizeRestTimer()">↙ Згорнути</button>':'<button type="button" aria-label="Розгорнути таймер на весь екран" onclick="expandRestTimer()">↗ На весь екран</button>')+
+ (stopped?'<button type="button" aria-label="Закрити таймер" onclick="dismissRestTimer()">×</button>':(full||dock)?'<button type="button" aria-label="Згорнути таймер без зупинки" onclick="minimizeRestTimer()">↙ Згорнути</button>':'<button type="button" aria-label="Розгорнути таймер" onclick="expandRestTimer()">↗ Розгорнути</button>')+
  '</div><small>'+esc(t.exercise)+' · після підходу '+t.setNumber+'</small>'+
  '<div class="rest-timer-clock" id="rest-clock" role="timer" aria-label="Таймер відпочинку">'+restDisplay(t)+'</div>'+
  '<div id="rest-elapsed" class="rest-elapsed">Загальний відпочинок '+restClock(elapsed)+'</div>'+
@@ -375,7 +376,16 @@ function renderRestTimer(){
  '<div class="rest-audio-controls"><button type="button" onclick="toggleRestSound()">'+(state.restSoundEnabled===false?'Звук: вимкнено':'Звук: увімкнено')+'</button><button type="button" onclick="testRestSound()">Перевірити звук</button></div>'+
  '<label class="rest-target-label">Наступний відпочинок <select aria-label="Тривалість наступного відпочинку" onchange="changeRestTarget(this.value)">'+[60,90,120,150,180,240,300].map(n=>'<option value="'+n+'" '+(n===(state.restTargetSeconds||150)?'selected':'')+'>'+restClock(n*1000)+'</option>').join('')+'</select></label>'+
  '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'Згорнути — не зупиняє таймер. Час фіксується кнопкою «Почати наступний підхід».')+'</small></div>';
+ syncRestPanel();
 }
+function syncRestPanel(){
+ const host=document.querySelector('#rest-timer');if(!host||!host.classList.contains('rest-docked'))return;
+ const column=document.querySelector('.grid>.right');
+ if(column){const rect=column.getBoundingClientRect();host.style.setProperty('--rest-left',rect.left+'px');host.style.setProperty('--rest-width',rect.width+'px')}
+ else{host.classList.remove('rest-docked')}
+}
+window.addEventListener('resize',()=>renderRestTimer());
+window.addEventListener('scroll',()=>syncRestPanel(),{passive:true});
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});render();
 
 function setFontSize(value){
