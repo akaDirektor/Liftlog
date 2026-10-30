@@ -90,3 +90,5 @@ input[type=number]{font-size:max(16px,calc(12px * var(--font-scale,1.15)))}
 .rest-undo{display:block;width:100%;border:1px solid #ffffff70;border-radius:8px;padding:11px;margin:12px 0;color:#fff;min-height:44px;font-size:13px;text-align:center}.rest-undo:hover{background:#ffffff18}
 
 .workout-kind-tabs,.history-filters{flex-wrap:wrap}.workout-kind-tabs button,.history-filters button{flex:1;min-width:150px}@media(max-width:650px){.workout-kind-tabs button,.history-filters button{min-width:calc(50% - 8px)}.workout-kind-tabs button:last-child{flex-basis:100%}}
+
+.rest-timer[data-phase=work]{background:#233d64}.rest-timer[data-phase=work] .rest-progress-track,.rest-timer[data-phase=work] .rest-target-label{display:none}.rest-timer[data-phase=work] .rest-start-set{background:#ffdc85;color:#243651}.rest-timer[data-phase=work] .rest-state{color:#ffe3a0}

@@ -289,6 +289,7 @@ function restSet(timer=state.restTimer){
  for(const e of s?.exercises||[]){const set=e.sets.find(x=>x.restTimerId===timer.setId);if(set)return set}return null;
 }
 function recordRest(timer=state.restTimer){
+ if(timer?.phase==='work'){recordWork(timer);return}
  const set=restSet(timer);if(!set)return;
  set.restSeconds=Math.floor(restElapsed(timer)/1000);
  set.restStatus=timer.status||(timer.running?'running':'paused');
@@ -302,7 +303,7 @@ function completeRest(reason='manual',now=Date.now()){
  t.elapsedMs=elapsed;
  t.endedAt=now;
  t.running=false;t.status='stopped';t.stopReason=reason;
- recordRest(t);const set=restSet(t);
+ recordRest(t);const set=t.phase==='work'?null:restSet(t);
  if(set){set.restLog??=[];set.restLog.push({startedAt:t.firstStartedAt||t.startedAt,endedAt:t.endedAt,seconds:Math.floor(t.elapsedMs/1000),reason})}
  save();
 }
@@ -346,21 +347,23 @@ function toggleRestSound(){
 function testRestSound(){enableRestAudio();if(restAudioContext?.state==='running')restBeep();else restAudioContext?.resume().then(()=>restBeep()).catch(()=>{})}
 function restDisplay(t,now=Date.now()){
  const elapsed=restElapsed(t,now),target=(t.targetSeconds||150)*1000;
- if(t.status==='stopped')return restClock(elapsed);
+ if(t.status==='stopped'||t.phase==='work')return restClock(elapsed);
  return elapsed>=target?'+'+restClock(elapsed-target):restClock(target-elapsed);
 }
 function tickRestTimer(now=Date.now()){
  const t=state.restTimer;if(!t)return;
  const elapsed=restElapsed(t,now),target=(t.targetSeconds||150)*1000;
- if(t.running&&elapsed>=target&&!t.targetReached){
+ if(t.phase!=='work'&&t.running&&elapsed>=target&&!t.targetReached){
   t.targetReached=true;save();restBeep();renderRestTimer();
  }
  const clock=document.querySelector('#rest-clock'),bar=document.querySelector('#rest-progress'),total=document.querySelector('#rest-elapsed');
  if(clock)clock.textContent=restDisplay(t,now);
- if(total)total.textContent='Загальний відпочинок '+restClock(elapsed);
+ if(total)total.textContent=(t.phase==='work'?'Тривалість підходу ':'Загальний відпочинок ')+restClock(elapsed);
  if(bar)bar.style.width=Math.min(100,elapsed/target*100)+'%';
 }
 function startRestTimer(i,j){
+ const pending=state.restTimer,marked=session().exercises[i].sets[j];
+ if(pending?.phase!=='work'&&pending?.status!=='stopped'&&pending?.manualSwitch&&pending?.linkedSetId===marked.timerUndoId){recordRest();save();renderRestTimer();return}
  enableRestAudio();
  const now=Date.now();
  if(state.restTimer&&state.restTimer.status!=='stopped'){
@@ -368,7 +371,7 @@ function startRestTimer(i,j){
  }
  const e=session().exercises[i],s=e.sets[j];
  s.restTimerId=now+'-'+Math.random().toString(36).slice(2);
- state.restTimer={workoutKey:key(),setId:s.restTimerId,exercise:state.library.find(x=>x.id===e.id)?.name||e.name||'Вправа',setNumber:j+1,firstStartedAt:now,startedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running'};
+ state.restTimer={workoutKey:key(),setId:s.restTimerId,exercise:state.library.find(x=>x.id===e.id)?.name||e.name||'Вправа',setNumber:j+1,firstStartedAt:now,startedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running',phase:'rest'};
  recordRest();save();renderRestTimer();
 }
 function pauseRestTimer(){
@@ -390,7 +393,7 @@ function resetRestTimer(){
  const old=state.restTimer;if(!old)return;
  stopRestTimer('restart');
  const now=Date.now();
- state.restTimer={...old,startedAt:now,firstStartedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running',endedAt:null,stopReason:'',targetReached:false,minimized:false};
+ state.restTimer={...old,startedAt:now,firstStartedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running',endedAt:null,stopReason:'',targetReached:false,minimized:false,phase:'rest'};
  recordRest();save();renderRestTimer();
 }
 function changeRestTarget(value){
@@ -411,21 +414,22 @@ function renderRestTimer(){
  const dock=window.innerWidth>1000&&tab==='workout'&&!t.minimized;
  const full=window.innerWidth<=1000&&t.mobileExpanded&&!t.minimized&&!stopped;
  host.classList.toggle('rest-fullscreen',full);host.classList.toggle('rest-docked',dock);
- host.dataset.status=stopped?'stopped':!t.running?'paused':overtime?'overtime':'running';
- const label=stopped?'Відпочинок завершено':!t.running?'Пауза':overtime?'Час вийшов — відпочинок триває':'Відпочинок';
+ host.dataset.status=stopped?'stopped':!t.running?'paused':t.phase==='work'?'working':overtime?'overtime':'running';
+ const work=t.phase==='work';host.dataset.phase=work?'work':'rest';
+ const label=stopped?'Відлік завершено':!t.running?'Повна пауза':work?'Підхід виконується':overtime?'Час вийшов — відпочинок триває':'Відпочинок';
  host.innerHTML='<div class="rest-timer-inner"><div class="rest-timer-heading"><b>'+label+'</b>'+
  (stopped?'<button type="button" aria-label="Закрити таймер" onclick="dismissRestTimer()">×</button>':(full||dock)?'<button type="button" aria-label="Згорнути таймер без зупинки" onclick="minimizeRestTimer()">↙ Згорнути</button>':'<button type="button" aria-label="Розгорнути таймер" onclick="expandRestTimer()">↗ Розгорнути</button>')+
- '</div><small>'+esc(t.exercise)+' · після підходу '+t.setNumber+'</small>'+
+ '</div><small>'+esc(t.phase==='work'?(t.workExercise||t.exercise):t.exercise)+' · '+(t.phase==='work'?'підхід ':'після підходу ')+(t.phase==='work'?(t.workSetNumber||'—'):t.setNumber)+'</small>'+
  '<div class="rest-timer-clock" id="rest-clock" role="timer" aria-label="Таймер відпочинку">'+restDisplay(t)+'</div>'+
  '<div id="rest-elapsed" class="rest-elapsed">Загальний відпочинок '+restClock(elapsed)+'</div>'+
  '<div class="rest-progress-track"><div id="rest-progress" style="width:'+Math.min(100,elapsed/target*100)+'%"></div></div>'+
- '<div class="rest-state" role="status">'+(stopped?'✓ Час зафіксовано':!t.running?'Ⅱ Відлік призупинений':overtime?'Планові '+restClock(target)+' минули. Фактичний час продовжує рахуватися.':'● Плановий відпочинок '+restClock(target))+'</div>'+
+ '<div class="rest-state" role="status">'+(stopped?'✓ Час зафіксовано':!t.running?'Ⅱ Відлік призупинений':work?'● Час підходу рахується':overtime?'Планові '+restClock(target)+' минули. Фактичний час продовжує рахуватися.':'● Плановий відпочинок '+restClock(target))+'</div>'+
  '<small>Початок '+restTimeLabel(t.firstStartedAt||t.startedAt)+(t.endedAt?' · Завершення '+restTimeLabel(t.endedAt):'')+'</small>'+
- '<div class="rest-timer-actions">'+(stopped?'<button type="button" onclick="resetRestTimer()">Новий відлік</button><button type="button" onclick="dismissRestTimer()">Закрити</button>':'<button type="button" class="rest-start-set" onclick="stopRestTimer()">Почати наступний підхід</button><button type="button" onclick="pauseRestTimer()">'+(t.running?'Пауза':'Продовжити')+'</button>')+'</div>'+
+ '<div class="rest-timer-actions">'+(stopped?'<button type="button" onclick="resetRestTimer()">Новий відлік</button><button type="button" onclick="dismissRestTimer()">Закрити</button>':'<button type="button" class="rest-start-set" onclick="switchChessPhase()">'+(work?'Почати відпочинок':'Почати підхід')+'</button><button type="button" onclick="pauseRestTimer()">'+(t.running?'Повна пауза':'Продовжити')+'</button>')+'</div>'+
  (state.timerUndoStack?.length?'<button type="button" class="rest-undo" onclick="undoTimerAction()">↶ Скасувати: '+esc(state.timerUndoStack.at(-1).label)+'</button>':'')+
  '<div class="rest-audio-controls"><button type="button" onclick="toggleRestSound()">'+(state.restSoundEnabled===false?'Звук: вимкнено':'Звук: увімкнено')+'</button><button type="button" onclick="testRestSound()">Перевірити сирену</button></div>'+
  '<label class="rest-target-label">Наступний відпочинок <select aria-label="Тривалість наступного відпочинку" onchange="changeRestTarget(this.value)">'+[60,90,120,150,180,240,300].map(n=>'<option value="'+n+'" '+(n===(state.restTargetSeconds||150)?'selected':'')+'>'+restClock(n*1000)+'</option>').join('')+'</select></label>'+
- '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'Згорнути — не зупиняє таймер. Час фіксується кнопкою «Почати наступний підхід».')+'</small></div>';
+ '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'Перемикай «Підхід ↔ Відпочинок». Кожен інтервал зберігається, відлік не переривається.')+'</small></div>';
  syncRestPanel();
 }
 function syncRestPanel(){
@@ -438,7 +442,7 @@ window.addEventListener('resize',()=>renderRestTimer());
 window.addEventListener('scroll',()=>syncRestPanel(),{passive:true});
 
 let timerActionDepth=0;
-const restFields=['restTimerId','restSeconds','restStatus','restStartedAt','restEndedAt','restStopReason','restLog'];
+const restFields=['workSeconds','workStatus','workStartedAt','workEndedAt','workLog','restTimerId','restSeconds','restStatus','restStartedAt','restEndedAt','restStopReason','restLog'];
 function timerUndoSnapshot(label,doneSet){
  const sets=[];
  for(const [workoutKey,s] of Object.entries(state.sessions)){
@@ -511,6 +515,45 @@ function addLegWorkoutLibrary(){
  state.legsLibraryV1=true;save();
 }
 addLegWorkoutLibrary();
+
+
+function findWorkTarget(t){
+ const s=state.sessions[t.workoutKey];if(!s)return null;
+ if(t.workSetId)for(const e of s.exercises){const j=e.sets.findIndex(x=>x.timerUndoId===t.workSetId);if(j>=0)return {e,set:e.sets[j],j}}
+ const all=s.exercises.flatMap(e=>e.sets.map((set,j)=>({e,set,j}))),anchor=t.phase==='work'?null:restSet(t),start=anchor?all.findIndex(x=>x.set===anchor)+1:0;
+ return all.slice(start).find(x=>!x.set.done)||null;
+}
+function recordWork(t){
+ const target=findWorkTarget(t);if(!target)return;
+ const set=target.set;
+ set.workSeconds=Math.floor(restElapsed(t)/1000);set.workStatus=t.status;
+ set.workStartedAt=t.firstStartedAt||t.startedAt;
+ if(t.endedAt){set.workEndedAt=t.endedAt;set.workLog??=[];if(!set.workLog.some(x=>x.startedAt===set.workStartedAt&&x.endedAt===t.endedAt))set.workLog.push({startedAt:set.workStartedAt,endedAt:t.endedAt,seconds:set.workSeconds})}
+}
+function switchChessPhase(){
+ return runTimerAction('перемикання підхід / відпочинок',()=>{
+  const old=state.restTimer;if(!old||old.status==='stopped')return;
+  enableRestAudio();
+  const now=Date.now(),wasWork=old.phase==='work',target=findWorkTarget(old);
+  completeRest(wasWork?'work-complete':'start-work',now);
+  const next={...old,startedAt:now,firstStartedAt:now,elapsedMs:0,running:true,status:'running',phase:wasWork?'rest':'work',endedAt:null,stopReason:'',targetReached:false};
+  if(wasWork){
+   next.manualSwitch=true;next.workSetId=null;
+   next.linkedSetId=target?.set.timerUndoId||null;
+   if(target){
+    target.set.restTimerId=now+'-'+Math.random().toString(36).slice(2);
+    next.setId=target.set.restTimerId;next.setNumber=target.j+1;
+    next.exercise=target.e.name||state.library.find(e=>e.id===target.e.id)?.name||'Вправа';
+   }else{next.setId=null;next.exercise='Відпочинок';next.setNumber='—'}
+   next.targetSeconds=state.restTargetSeconds||150;
+  }else{
+   next.workSetId=target?.set.timerUndoId||null;
+   next.workSetNumber=target?target.j+1:null;
+   next.workExercise=target?(target.e.name||state.library.find(e=>e.id===target.e.id)?.name):'Підхід';
+  }
+  state.restTimer=next;recordRest();save();renderRestTimer();
+ });
+}
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});render();
 
