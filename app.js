@@ -282,14 +282,30 @@ function enableRestAudio(){
  if(restAudioContext.state==='suspended')restAudioContext.resume().catch(()=>{});
  }catch{}
 }
+let restAlarmOscillator=null;
 function restBeep(){
  if(state.restSoundEnabled===false||!restAudioContext||restAudioContext.state!=='running')return;
- try{const now=restAudioContext.currentTime;
- for(let i=0;i<3;i++){
- const oscillator=restAudioContext.createOscillator(),gain=restAudioContext.createGain(),at=now+i*.28;
- oscillator.frequency.value=880;gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(.16,at+.02);gain.gain.exponentialRampToValueAtTime(.001,at+.18);
- oscillator.connect(gain);gain.connect(restAudioContext.destination);oscillator.start(at);oscillator.stop(at+.2);
- }}catch{}
+ try{
+  if(restAlarmOscillator){try{restAlarmOscillator.stop()}catch{}}
+  const now=restAudioContext.currentTime,duration=3.6;
+  const oscillator=restAudioContext.createOscillator(),gain=restAudioContext.createGain();
+  oscillator.type='square';
+  oscillator.frequency.setValueAtTime(850,now);
+  for(let i=0;i<6;i++){
+   const at=now+i*.6;
+   oscillator.frequency.setValueAtTime(850,at);
+   oscillator.frequency.linearRampToValueAtTime(1650,at+.25);
+   oscillator.frequency.linearRampToValueAtTime(850,at+.5);
+  }
+  gain.gain.setValueAtTime(0,now);
+  gain.gain.linearRampToValueAtTime(.36,now+.015);
+  gain.gain.setValueAtTime(.36,now+duration-.04);
+  gain.gain.linearRampToValueAtTime(0,now+duration);
+  oscillator.connect(gain);gain.connect(restAudioContext.destination);
+  restAlarmOscillator=oscillator;
+  oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();if(restAlarmOscillator===oscillator)restAlarmOscillator=null};
+  oscillator.start(now);oscillator.stop(now+duration);
+ }catch{}
 }
 function toggleRestSound(){
  state.restSoundEnabled=state.restSoundEnabled===false;enableRestAudio();save();renderRestTimer();
@@ -373,7 +389,7 @@ function renderRestTimer(){
  '<div class="rest-state" role="status">'+(stopped?'✓ Час зафіксовано':!t.running?'Ⅱ Відлік призупинений':overtime?'Планові '+restClock(target)+' минули. Фактичний час продовжує рахуватися.':'● Плановий відпочинок '+restClock(target))+'</div>'+
  '<small>Початок '+restTimeLabel(t.firstStartedAt||t.startedAt)+(t.endedAt?' · Завершення '+restTimeLabel(t.endedAt):'')+'</small>'+
  '<div class="rest-timer-actions">'+(stopped?'<button type="button" onclick="resetRestTimer()">Новий відлік</button><button type="button" onclick="dismissRestTimer()">Закрити</button>':'<button type="button" class="rest-start-set" onclick="stopRestTimer()">Почати наступний підхід</button><button type="button" onclick="pauseRestTimer()">'+(t.running?'Пауза':'Продовжити')+'</button>')+'</div>'+
- '<div class="rest-audio-controls"><button type="button" onclick="toggleRestSound()">'+(state.restSoundEnabled===false?'Звук: вимкнено':'Звук: увімкнено')+'</button><button type="button" onclick="testRestSound()">Перевірити звук</button></div>'+
+ '<div class="rest-audio-controls"><button type="button" onclick="toggleRestSound()">'+(state.restSoundEnabled===false?'Звук: вимкнено':'Звук: увімкнено')+'</button><button type="button" onclick="testRestSound()">Перевірити сирену</button></div>'+
  '<label class="rest-target-label">Наступний відпочинок <select aria-label="Тривалість наступного відпочинку" onchange="changeRestTarget(this.value)">'+[60,90,120,150,180,240,300].map(n=>'<option value="'+n+'" '+(n===(state.restTargetSeconds||150)?'selected':'')+'>'+restClock(n*1000)+'</option>').join('')+'</select></label>'+
  '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'Згорнути — не зупиняє таймер. Час фіксується кнопкою «Почати наступний підхід».')+'</small></div>';
  syncRestPanel();
