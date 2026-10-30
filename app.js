@@ -1,7 +1,7 @@
 const $=s=>document.querySelector(s),fmt=n=>new Intl.NumberFormat('uk-UA',{maximumFractionDigits:1}).format(n),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initial={week:1,kind:'back',cycle:1,library:[{id:1,name:'Тяга верхнього блока',group:'back',weight:50,reps:12},{id:2,name:'Тяга горизонтального блока',group:'back',weight:45,reps:12},{id:3,name:'Тяга гантелі в нахилі',group:'back',weight:22,reps:10},{id:4,name:'Згинання рук зі штангою',group:'back',weight:25,reps:12},{id:5,name:'Жим штанги лежачи',group:'chest',weight:60,reps:10},{id:6,name:'Жим гантелей під кутом',group:'chest',weight:20,reps:12},{id:7,name:'Розведення в кросовері',group:'chest',weight:15,reps:12},{id:8,name:'Розгинання рук на блоці',group:'chest',weight:25,reps:12}],sessions:{},history:[]};let state;try{state=JSON.parse(localStorage.getItem('liftlog-v1'))||initial}catch{state=initial}let tab='workout';const workoutKinds=['back','chest','legs'];const title=k=>({back:'Спина + біцепс',chest:'Груди + трицепс',legs:'Ноги + плечі'}[k]||'Тренування');const slot=()=>`${state.cycle}-${state.week}-${state.kind}`;const key=()=>state.activeSessions?.[slot()]||slot();function save(){preserveHistoryBackup();localStorage.setItem('liftlog-v1',JSON.stringify(state))}function session(){let k=key();if(!state.sessions[k]){let mult=state.week===7?.6:1+(state.week-1)*.025;state.sessions[k]={date:localDate(),finished:false,exercises:state.library.filter(e=>!e.deleted&&e.group===state.kind).map(e=>({id:e.id,weightMode:e.weightMode||(e.loadMode==='bodyweight'?'bodyweight':'total'),loadMode:e.loadMode,sets:Array.from({length:3},()=>({pw:e.loadMode==='bodyweight'?e.weight:Math.round(e.weight*mult*2)/2,pr:e.reps,fw:'',fr:'',done:false}))}))};}state.sessions[k].exercises.forEach(e=>{preparePlanLinks(e);e.sets.forEach(prepareSet)});return state.sessions[k]}function totals(s=session()){return s.exercises.reduce((a,e)=>{e.sets.forEach(x=>{a.plan+=effectiveLoad(e,x.pw)*x.pr;if(x.done){a.fact+=effectiveLoad(e,x.fw)*Number(x.fr);a.done++}a.count++});return a},{plan:0,fact:0,done:0,count:0})}function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',2800)}
 function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));let headings={workout:['Кожен підхід має значення.','Плануй, тренуйся та спостерігай, як зростає твоя сила.'],progress:['Твоя сила в цифрах.','Кожне завершене тренування — ще один крок уперед.'],library:['Тільки твої вправи.','Невелика бібліотека. Жодного зайвого пошуку.'],cycle:['Ритм твого прогресу.','Шість тижнів наростання. Один тиждень відновлення.']};$('#app').innerHTML=`<div class="heading"><div><h1>${headings[tab][0]}</h1><p>${headings[tab][1]}</p></div><span class="pill">Цикл ${state.cycle} · Тиждень ${state.week} із 7</span></div>`+({workout:workout,progress:progress,library:library,cycle:cycle}[tab])();save();renderRestTimer()}
-function workout(){let s=session();if(s.finished)return workoutKindTabs()+completedWorkout();let t=totals(),history=state.history.filter(h=>h.kind===state.kind),last=history.at(-1);return `<div class="card cycle-mini"><div><span class="eyebrow">ПОТОЧНИЙ ЦИКЛ</span><div style="margin-top:6px;font-weight:700;font-size:12px">${state.week===7?'Тиждень відновлення':'Поступове наростання навантаження'}</div></div><div class="week-dots">${Array.from({length:7},(_,i)=>`<button class="${state.week===i+1?'current':''} ${i===6?'deload':''}" onclick="setWeek(${i+1})" title="Тиждень ${i+1}">${i===6?'↘':i+1}</button>`).join('')}</div></div>${workoutKindTabs()}<div class="grid"><div><section class="card"><div class="work-head"><div><h2>${title(state.kind)}</h2><small>${s.exercises.length} вправи · ${t.count} підходів · <input aria-label="Дата тренування" type="date" value="${s.date}" onchange="session().date=this.value;save()" style="border:0;color:#89919c;background:none;font-size:11px"></small></div><div class="work-actions"><span class="badge">${s.finished?'Завершено':'План → виконання'}</span><button class="secondary new-workout" onclick="startNewWorkout()">＋ Нове тренування</button></div></div>${s.exercises.map((e,i)=>exercise(e,i)).join('')}<label class="notes-label">Примітки до тренування<textarea maxlength="5000" placeholder="Самопочуття, цілі, що врахувати…" oninput="session().notes=this.value;save()">${esc(s.notes||'')}</textarea></label><button class="secondary" style="margin-top:20px" onclick="addExercise()">＋ Додати вправу</button></section><p class="footer-note">Тоннаж = вага × повтори. Для гантелей: вага однієї гантелі та повтори на сторону; один підхід — обидві сторони.</p></div><div class="right"><section class="card total"><span class="eyebrow">ПІДНЯТО СЬОГОДНІ</span><div class="big" id="fact-total">${fmt(t.fact)} <span>кг</span></div><p style="font-size:11px" id="plan-total">із ${fmt(t.plan)} кг за планом</p><div class="track"><i id="bar" style="width:${Math.min(100,t.fact/t.plan*100)||0}%"></i></div><div class="total-footer"><span id="set-count">${t.done} із ${t.count} підходів</span><span id="percent">${Math.round(t.fact/t.plan*100)||0}% плану</span></div><button class="primary" onclick="finish()">${s.finished?'Оновити результат':'Завершити тренування'} &nbsp; ↗</button></section><section class="card"><div class="eyebrow">МИНУЛОГО РАЗУ</div>${last?`<div class="big" style="font-size:30px">${fmt(last.fact)} <span>кг</span></div><small>${last.date} · ${last.done} підходів</small>`:`<div style="font-size:24px;margin:18px 0">Перший крок ↗</div><p style="font-size:11px">Заверши тренування, щоб почати свою історію прогресу.</p>`}<div class="statline"><span>Ціль цього тижня</span><b>${state.week===7?'Відновлення':'+'+(state.week-1)*2.5+'% ваги'}</b></div><div class="statline"><span>Тренувань у циклі</span><b>${state.history.filter(h=>h.cycle===state.cycle).length} виконано</b></div></section><div class="note">↗ &nbsp; План — твій орієнтир. Записуй фактичні повтори й вагу, навіть якщо вони відрізняються.</div></div></div>`}
+function workout(){let s=session();if(s.finished)return workoutKindTabs()+completedWorkout();let t=totals(),history=state.history.filter(h=>h.kind===state.kind),last=history.at(-1);return `<div class="card cycle-mini"><div><span class="eyebrow">ПОТОЧНИЙ ЦИКЛ</span><div style="margin-top:6px;font-weight:700;font-size:12px">${state.week===7?'Тиждень відновлення':'Поступове наростання навантаження'}</div></div><div class="week-dots">${Array.from({length:7},(_,i)=>`<button class="${state.week===i+1?'current':''} ${i===6?'deload':''}" onclick="setWeek(${i+1})" title="Тиждень ${i+1}">${i===6?'↘':i+1}</button>`).join('')}</div></div>${workoutKindTabs()}<div class="grid"><div><section class="card"><div class="work-head"><div><h2>${title(state.kind)}</h2><small>${s.exercises.length} вправи · ${t.count} підходів · <input aria-label="Дата тренування" type="date" value="${s.date}" onchange="session().date=this.value;save()" style="border:0;color:#89919c;background:none;font-size:11px"></small></div><div class="work-actions"><span class="badge">${s.finished?'Завершено':'План → виконання'}</span><button class="secondary" onclick="beginWorkTimer()">Почати замір підходу</button><button class="secondary new-workout" onclick="startNewWorkout()">＋ Нове тренування</button></div></div>${s.exercises.map((e,i)=>exercise(e,i)).join('')}<label class="notes-label">Примітки до тренування<textarea maxlength="5000" placeholder="Самопочуття, цілі, що врахувати…" oninput="session().notes=this.value;save()">${esc(s.notes||'')}</textarea></label><button class="secondary" style="margin-top:20px" onclick="addExercise()">＋ Додати вправу</button></section><p class="footer-note">Тоннаж = вага × повтори. Для гантелей: вага однієї гантелі та повтори на сторону; один підхід — обидві сторони.</p></div><div class="right"><section class="card total"><span class="eyebrow">ПІДНЯТО СЬОГОДНІ</span><div class="big" id="fact-total">${fmt(t.fact)} <span>кг</span></div><p style="font-size:11px" id="plan-total">із ${fmt(t.plan)} кг за планом</p><div class="track"><i id="bar" style="width:${Math.min(100,t.fact/t.plan*100)||0}%"></i></div><div class="total-footer"><span id="set-count">${t.done} із ${t.count} підходів</span><span id="percent">${Math.round(t.fact/t.plan*100)||0}% плану</span></div><button class="primary" onclick="finish()">${s.finished?'Оновити результат':'Завершити тренування'} &nbsp; ↗</button></section><section class="card"><div class="eyebrow">МИНУЛОГО РАЗУ</div>${last?`<div class="big" style="font-size:30px">${fmt(last.fact)} <span>кг</span></div><small>${last.date} · ${last.done} підходів</small>`:`<div style="font-size:24px;margin:18px 0">Перший крок ↗</div><p style="font-size:11px">Заверши тренування, щоб почати свою історію прогресу.</p>`}<div class="statline"><span>Ціль цього тижня</span><b>${state.week===7?'Відновлення':'+'+(state.week-1)*2.5+'% ваги'}</b></div><div class="statline"><span>Тренувань у циклі</span><b>${state.history.filter(h=>h.cycle===state.cycle).length} виконано</b></div></section><div class="note">↗ &nbsp; План — твій орієнтир. Записуй фактичні повтори й вагу, навіть якщо вони відрізняються.</div></div></div>`}
 function exercise(e,i){let info=state.library.find(x=>x.id===e.id);return `<div class="exercise" data-exercise="${i}"><div class="exercise-title"><span class="num">0${i+1}</span><div><b>${esc(info?.name||'Вправа')}</b><small>${e.sets.length} підходи</small></div><div class="exercise-actions"><button onclick="replaceExercise(${i})">Замінити ⇄</button><button class="danger" onclick="removeWorkoutExercise(${i})">Прибрати</button></div></div>${exerciseWeightMode(e)==='bodyweight'?pullupHelp(e,i):''}<div class="weight-mode-note">${weightModeLabel(exerciseWeightMode(e))}</div><table class="sets"><thead><tr><th>ПІДХІД</th><th>${info?.loadMode==='bodyweight'?'ПЛАН ±КГ':'ПЛАН, КГ'}</th><th>ПОВТОРИ</th><th>${info?.loadMode==='bodyweight'?'ФАКТ ±КГ':'ФАКТ, КГ'}</th><th>ПОВТОРИ</th><th>ГОТОВО</th></tr></thead><tbody>${e.sets.map((s,j)=>`<tr data-set="${j}"><td><span>${j+1}</span><button class="delete-set" aria-label="Видалити підхід ${j+1}" title="Видалити підхід" onclick="deleteSet(${i},${j})">×</button></td>${['pw','pr','fw','fr'].map(k=>`<td><input aria-label="${esc(info?.name)} підхід ${j+1} ${k}" data-field="${k}" class="${k[0]==='f'?'fact':''}" type="number" min="${info?.loadMode==='bodyweight'&&k[1]==='w'?-300:0}" max="${k[1]==='r'?200:1000}" step="${k[1]==='r'?1:.5}" value="${s[k]}" placeholder="—" oninput="change(${i},${j},'${k}',this)"></td>`).join('')}<td><button aria-label="Відмітити підхід ${j+1}" class="check ${s.done?'done':''}" onclick="toggleSet(${i},${j})">✓</button></td></tr>${setVolumeRow(e,s,j)}`).join('')}</tbody></table><div class="exercise-volume" data-volume-summary>${exerciseVolumeSummary(e)}</div><label class="notes-label">Примітки до вправи<textarea maxlength="3000" placeholder="Техніка, відчуття, відпочинок…" oninput="session().exercises[${i}].notes=this.value;save()">${esc(e.notes||'')}</textarea></label><button style="font-size:10px;color:#89919c;margin:8px 0 0 42px" onclick="addSet(${i})">＋ Підхід</button></div>`}
 function change(i,j,k,el){let v=el.value===''?'':Number(el.value);if(v!==''&&(!Number.isFinite(v)||v<Number(el.min||0)||v>Number(el.max)||(k[1]==='r'&&!Number.isInteger(v)))){el.value=session().exercises[i].sets[j][k];toast('Перевір значення');return}let x=session().exercises[i].sets[j];x[k]=v;if(x.done&&(x.fr===''||x.fw===''))x.done=false;session().finished=false;save();refreshTotals()}
 function refreshTotals(){let t=totals();$('#fact-total').innerHTML=`${fmt(t.fact)} <span>кг</span>`;$('#plan-total').textContent=`із ${fmt(t.plan)} кг за планом`;$('#bar').style.width=(Math.min(100,t.fact/t.plan*100)||0)+'%';$('#set-count').textContent=`${t.done} із ${t.count} підходів`;$('#percent').textContent=(Math.round(t.fact/t.plan*100)||0)+'% плану';refreshExerciseVolumes()}
@@ -207,7 +207,7 @@ function preserveHistoryBackup(){
 function progress(){
  const rows=state.history.map((h,index)=>({h,index})).filter(({h})=>historyKinds.includes(h.kind)).sort((a,b)=>b.h.date.localeCompare(a.h.date)||b.index-a.index);
  const filters='<div class="split history-filters" role="group" aria-label="Типи тренувань в історії">'+workoutKinds.map(kind=>'<button class="'+(historyKinds.includes(kind)?'selected':'')+'" aria-pressed="'+historyKinds.includes(kind)+'" onclick="toggleHistoryKind(\''+kind+'\')">'+(historyKinds.includes(kind)?'✓ ':'')+title(kind)+'</button>').join('')+'</div>';
- return filters+progressCharts()+'<section class="card"><div class="row"><div><h2>Історія тренувань</h2><p>'+esc(historySelectionLabel())+' · '+rows.length+' записів</p></div><button class="secondary" onclick="downloadBackup()">Завантажити резервну копію</button></div>'+
+ return filters+progressCharts()+timeAnalytics()+'<section class="card"><div class="row"><div><h2>Історія тренувань</h2><p>'+esc(historySelectionLabel())+' · '+rows.length+' записів</p></div><button class="secondary" onclick="downloadBackup()">Завантажити резервну копію</button></div>'+
  (rows.length?'<div class="history-list">'+rows.map(({h,index})=>'<button class="history-entry" onclick="showWorkoutHistory('+index+')"><span><b>'+esc(title(h.kind))+'</b><small>'+esc(h.date)+' · Цикл '+h.cycle+' · Тиждень '+h.week+'</small></span><span><b>'+fmt(h.fact)+' кг</b><small>'+h.done+' підходів · Деталі →</small></span></button>').join('')+'</div>':'<p style="margin-top:20px">'+(historyKinds.length?'Немає збережених результатів для вибраних тренувань.':'Вибери один або кілька типів тренувань.')+'</p>')+'</section>';
 }
 
@@ -363,6 +363,7 @@ function tickRestTimer(now=Date.now()){
 }
 function startRestTimer(i,j){
  const pending=state.restTimer,marked=session().exercises[i].sets[j];
+ if(pending?.phase==='work'&&pending.status!=='stopped')pending.workSetId=marked.timerUndoId;
  if(pending?.phase!=='work'&&pending?.status!=='stopped'&&pending?.manualSwitch&&pending?.linkedSetId===marked.timerUndoId){recordRest();save();renderRestTimer();return}
  enableRestAudio();
  const now=Date.now();
@@ -408,7 +409,9 @@ function minimizeRestTimer(){
 function expandRestTimer(){if(!state.restTimer)return;enableRestAudio();state.restTimer.minimized=false;state.restTimer.mobileExpanded=true;save();renderRestTimer()}
 function renderRestTimer(){
  const host=document.querySelector('#rest-timer');if(!host)return;
- const t=state.restTimer;host.hidden=!t&&!(state.timerUndoStack?.length);
+ const t=state.restTimer;renderWorkStatus();
+ if(t?.phase==='work'&&t.status!=='stopped'){host.hidden=true;host.innerHTML='';host.classList.remove('rest-fullscreen','rest-docked');return}
+ host.hidden=!t&&!(state.timerUndoStack?.length);
  if(!t){host.innerHTML=state.timerUndoStack?.length?'<b>Таймер закритий</b><button class="rest-undo" onclick="undoTimerAction()">↶ Скасувати останню дію</button>':'';host.classList.remove('rest-fullscreen','rest-docked');host.style.removeProperty('--rest-left');host.style.removeProperty('--rest-width');return}
  const target=(t.targetSeconds||150)*1000,elapsed=restElapsed(t),stopped=t.status==='stopped',overtime=elapsed>=target;
  const dock=window.innerWidth>1000&&tab==='workout'&&!t.minimized;
@@ -472,7 +475,7 @@ function undoTimerAction(){
  const current=new Map();
  for(const [workoutKey,s] of Object.entries(state.sessions))for(const e of s.exercises)for(const set of e.sets)if(set.timerUndoId)current.set(set.timerUndoId,{set,session:s,workoutKey});
  // Never recreate a deleted set or erase notes, weights, or repetitions.
- if(snapshot.timer&&!snapshot.sets.some(x=>x.rest.restTimerId===snapshot.timer.setId&&current.has(x.id))){toast('Підхід попереднього таймера вже видалений');return}
+ if(snapshot.timer&&!snapshot.sets.some(x=>(snapshot.timer.phase==='work'?x.id===snapshot.timer.workSetId:x.rest.restTimerId===snapshot.timer.setId)&&current.has(x.id))){toast('Підхід попереднього таймера вже видалений');return}
  stack.pop();
  for(const entry of snapshot.sets){
   const found=current.get(entry.id);if(!found)continue;
@@ -553,6 +556,87 @@ function switchChessPhase(){
   }
   state.restTimer=next;recordRest();save();renderRestTimer();
  });
+}
+
+
+function renderWorkStatus(){
+ const host=document.querySelector('#work-timer-status');if(!host)return;
+ const t=state.restTimer,active=t?.phase==='work'&&t.status!=='stopped';
+ host.hidden=!active;
+ host.innerHTML=active?'<span><b>'+(t.running?'● Підхід виконується':'Ⅱ Замір підходу на паузі')+'</b> · '+esc(t.workExercise||'Вправа')+' · підхід '+(t.workSetNumber||'—')+'<small>Введи вагу й повтори та постав ✓ — почнеться відпочинок.</small></span><div><button type="button" onclick="pauseRestTimer()">'+(t.running?'Повна пауза':'Продовжити')+'</button><button type="button" onclick="undoTimerAction()">↶ Скасувати</button></div>':'';
+}
+function beginWorkTimer(){
+ session();
+ return runTimerAction('початок заміру підходу',()=>{
+ if(state.restTimer?.phase==='work'&&state.restTimer.status!=='stopped'){toast('Замір підходу вже триває');return}
+ if(state.restTimer&&state.restTimer.status!=='stopped'){switchChessPhase();return}
+ const now=Date.now(),t={workoutKey:key(),setId:null,phase:'work'},target=findWorkTarget(t);
+ if(!target){toast('Додай невиконаний підхід для заміру');return}
+ state.restTimer={...t,workSetId:target.set.timerUndoId,workSetNumber:target.j+1,workExercise:target.e.name||state.library.find(e=>e.id===target.e.id)?.name||'Вправа',exercise:'',setNumber:target.j+1,firstStartedAt:now,startedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running'};
+ recordWork(state.restTimer);save();renderRestTimer();
+ });
+}
+function measuredInterval(set,prefix){
+ const logs=set[prefix+'Log'];
+ if(Array.isArray(logs)&&logs.length){
+  const seen=new Set();let seconds=0,count=0;
+  for(const log of logs){
+   const duration=Number(log.seconds),id=String(log.startedAt)+'-'+String(log.endedAt);
+   if(seen.has(id)||!Number.isFinite(duration)||duration<=0||!Number.isFinite(Number(log.endedAt)))continue;
+   seen.add(id);seconds+=duration;count++;
+  }
+  return count?seconds:null;
+ }
+ const seconds=Number(set[prefix+'Seconds']);
+ return set[prefix+'Status']==='stopped'&&Number.isFinite(seconds)&&seconds>0?seconds:null;
+}
+function emptyTimeStats(){return {done:0,workSets:0,restSets:0,pairedSets:0,workSeconds:0,restSeconds:0,pairedSeconds:0,pairedVolume:0,repetitions:0}}
+function addTimeStats(a,b){for(const key of Object.keys(a))a[key]+=b[key];return a}
+function workoutTimeStats(h){
+ const stats=emptyTimeStats();
+ for(const e of h.exercises||[])for(const set of e.sets||[]){
+  if(!set.done)continue;
+  stats.done++;
+  const work=measuredInterval(set,'work'),rest=measuredInterval(set,'rest');
+  if(work!==null){
+   stats.workSets++;stats.workSeconds+=work;
+   const sides=['sides','pairSides'].includes(exerciseWeightMode(e))?2:1;
+   stats.repetitions+=(Number(set.fr)||0)*sides;
+  }
+  if(rest!==null){stats.restSets++;stats.restSeconds+=rest}
+  if(work!==null&&rest!==null){stats.pairedSets++;stats.pairedSeconds+=work+rest;stats.pairedVolume+=setVolume(e,set).fact}
+ }
+ return stats;
+}
+function displayDuration(seconds){return seconds===null?'—':restClock(Math.round(seconds)*1000)}
+function timeStatsValues(s){return {
+ work:s.workSets?s.workSeconds/s.workSets:null,
+ rest:s.restSets?s.restSeconds/s.restSets:null,
+ density:s.pairedSeconds?s.pairedVolume/(s.pairedSeconds/60):null,
+ reps:s.workSeconds?s.repetitions/(s.workSeconds/60):null
+}}
+function recordsInTrendWeek(records,w){return records.filter(h=>trendMode==='recent'?h.date>=w.start&&h.date<=w.end:Number(h.cycle)===w.cycle&&Number(h.week)===w.week)}
+function analyticsBars(weeks,series){
+ const max=Math.max(1,...weeks.flatMap(w=>series.map(s=>w.values[s.key]??0)));
+ return '<div class="analytics-chart">'+weeks.map(w=>'<div class="analytics-week"><div class="analytics-bars">'+series.map(s=>{
+ const value=w.values[s.key];
+ return '<div class="analytics-bar-column"><small>'+(value===null?'—':s.duration?displayDuration(value):fmt(value))+'</small><div class="analytics-bar-space">'+(value===null?'<span>—</span>':'<i class="'+s.className+'" style="height:'+Math.max(1,value/max*100)+'%" title="'+esc(w.label+' · '+s.name)+': '+(s.duration?displayDuration(value):fmt(value))+'"></i>')+'</div></div>';
+ }).join('')+'</div><b>'+w.label+'</b><small>'+(w.dateLabel||'')+'</small></div>').join('')+'</div>';
+}
+function timeAnalytics(){
+ const selected=selectedHistory(),weeks=trendWeeks(selected),records=weeks.flatMap(w=>recordsInTrendWeek(selected,w));
+ const summary=records.reduce((s,h)=>addTimeStats(s,workoutTimeStats(h)),emptyTimeStats()),v=timeStatsValues(summary);
+ const points=weeks.map(w=>{const s=recordsInTrendWeek(selected,w).reduce((sum,h)=>addTimeStats(sum,workoutTimeStats(h)),emptyTimeStats());return {...w,stats:s,values:timeStatsValues(s)}});
+ const perWorkout=records.map(h=>({h,stats:workoutTimeStats(h)})).sort((a,b)=>b.h.date.localeCompare(a.h.date));
+ return '<section class="card time-analytics"><h2>Час і щільність тренувань</h2><p>Той самий період із шести тижнів і вибрані типи тренувань.</p><div class="time-metrics">'+
+ '<div><small>Середній відпочинок</small><b>'+displayDuration(v.rest)+'</b><small>'+summary.restSets+' із '+summary.done+' підходів із заміром відпочинку</small></div>'+
+ '<div><small>Середній підхід</small><b>'+displayDuration(v.work)+'</b><small>'+summary.workSets+' із '+summary.done+' підходів із заміром роботи</small></div>'+
+ '<div><small>Щільність роботи</small><b>'+(v.density===null?'—':fmt(v.density)+' кг/хв')+'</b><small>'+summary.pairedSets+' підходів із заміром роботи й відпочинку</small></div>'+
+ '<div><small>Темп повторів</small><b>'+(v.reps===null?'—':fmt(v.reps)+' / хв')+'</b><small>За хвилину роботи; дві сторони враховані</small></div></div>'+
+ '<div class="analytics-sections"><section><h3>Середній час: підхід і відпочинок</h3><div class="chart-legend"><span>🟦 Підхід</span><span>🟩 Відпочинок</span></div>'+analyticsBars(points,[{key:'work',name:'Середній підхід',duration:true,className:'work-bar'},{key:'rest',name:'Середній відпочинок',duration:true,className:'rest-bar'}])+'</section>'+
+ '<section><h3>Тоннаж за хвилину · кг/хв</h3><p>Час роботи + відпочинок лише для підходів із обома замірами.</p>'+analyticsBars(points,[{key:'density',name:'Кг за хвилину',duration:false,className:'density-bar'}])+'</section></div>'+
+ '<p class="analytics-note">Повну паузу виключено. Відпочинок понад 2:30 враховано. Відсутній або нульовий замір не вважається нульовим результатом. Старі тренування без таймера залишаються без часових показників. Кг/хв показує щільність роботи, а не якість тренування.</p>'+
+ (perWorkout.length?'<details class="time-workout-details"><summary>Часова статистика за кожне тренування</summary><div class="time-table-scroll"><table class="wide-table"><tr><th>ДАТА / ТРЕНУВАННЯ</th><th>ПАУЗА</th><th>ПІДХІД</th><th>КГ/ХВ</th><th>ПОВТ./ХВ</th><th>ЗАМІРИ</th></tr>'+perWorkout.map(({h,stats})=>{const v=timeStatsValues(stats);return '<tr><td>'+esc(h.date)+'<small>'+esc(title(h.kind))+'</small></td><td>'+displayDuration(v.rest)+'</td><td>'+displayDuration(v.work)+'</td><td>'+(v.density===null?'—':fmt(v.density))+'</td><td>'+(v.reps===null?'—':fmt(v.reps))+'</td><td>Робота '+stats.workSets+'/'+stats.done+'<small>Відпочинок '+stats.restSets+'/'+stats.done+'</small></td></tr>'}).join('')+'</table></div></details>':'')+'</section>';
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});render();
