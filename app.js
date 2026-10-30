@@ -265,25 +265,57 @@ function recordRest(timer=state.restTimer){
 }
 function completeRest(reason='manual',now=Date.now()){
  const t=state.restTimer;if(!t||t.status==='stopped')return;
- const elapsed=restElapsed(t,now),target=(t.targetSeconds||150)*1000;
- t.elapsedMs=reason==='time-up'?target:elapsed;
- t.endedAt=reason==='time-up'?now-Math.max(0,elapsed-target):now;
+ const elapsed=restElapsed(t,now);
+ t.elapsedMs=elapsed;
+ t.endedAt=now;
  t.running=false;t.status='stopped';t.stopReason=reason;
  recordRest(t);const set=restSet(t);
  if(set){set.restLog??=[];set.restLog.push({startedAt:t.firstStartedAt||t.startedAt,endedAt:t.endedAt,seconds:Math.floor(t.elapsedMs/1000),reason})}
  save();
 }
+let restAudioContext=null;
+function enableRestAudio(){
+ try{
+ const Audio=window.AudioContext||window.webkitAudioContext;
+ if(!Audio)return;
+ if(!restAudioContext)restAudioContext=new Audio();
+ if(restAudioContext.state==='suspended')restAudioContext.resume().catch(()=>{});
+ }catch{}
+}
+function restBeep(){
+ if(state.restSoundEnabled===false||!restAudioContext||restAudioContext.state!=='running')return;
+ try{const now=restAudioContext.currentTime;
+ for(let i=0;i<3;i++){
+ const oscillator=restAudioContext.createOscillator(),gain=restAudioContext.createGain(),at=now+i*.28;
+ oscillator.frequency.value=880;gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(.16,at+.02);gain.gain.exponentialRampToValueAtTime(.001,at+.18);
+ oscillator.connect(gain);gain.connect(restAudioContext.destination);oscillator.start(at);oscillator.stop(at+.2);
+ }}catch{}
+}
+function toggleRestSound(){
+ state.restSoundEnabled=state.restSoundEnabled===false;enableRestAudio();save();renderRestTimer();
+}
+function testRestSound(){enableRestAudio();if(restAudioContext?.state==='running')restBeep();else restAudioContext?.resume().then(()=>restBeep()).catch(()=>{})}
+function restDisplay(t,now=Date.now()){
+ const elapsed=restElapsed(t,now),target=(t.targetSeconds||150)*1000;
+ if(t.status==='stopped')return restClock(elapsed);
+ return elapsed>=target?'+'+restClock(elapsed-target):restClock(target-elapsed);
+}
 function tickRestTimer(now=Date.now()){
  const t=state.restTimer;if(!t)return;
- if(t.running&&restElapsed(t,now)>=(t.targetSeconds||150)*1000){completeRest('time-up',now);renderRestTimer();return}
- const clock=document.querySelector('#rest-clock'),bar=document.querySelector('#rest-progress');
- if(clock)clock.textContent=restClock(Math.max(0,(t.targetSeconds||150)*1000-restElapsed(t,now)));
- if(bar)bar.style.width=Math.min(100,restElapsed(t,now)/((t.targetSeconds||150)*1000)*100)+'%';
+ const elapsed=restElapsed(t,now),target=(t.targetSeconds||150)*1000;
+ if(t.running&&elapsed>=target&&!t.targetReached){
+  t.targetReached=true;save();restBeep();renderRestTimer();
+ }
+ const clock=document.querySelector('#rest-clock'),bar=document.querySelector('#rest-progress'),total=document.querySelector('#rest-elapsed');
+ if(clock)clock.textContent=restDisplay(t,now);
+ if(total)total.textContent='Загальний відпочинок '+restClock(elapsed);
+ if(bar)bar.style.width=Math.min(100,elapsed/target*100)+'%';
 }
 function startRestTimer(i,j){
+ enableRestAudio();
  const now=Date.now();
  if(state.restTimer&&state.restTimer.status!=='stopped'){
-  if(state.restTimer.running&&restElapsed(state.restTimer,now)>=(state.restTimer.targetSeconds||150)*1000)completeRest('time-up',now);else completeRest('next-set',now);
+  completeRest('next-set',now);
  }
  const e=session().exercises[i],s=e.sets[j];
  s.restTimerId=now+'-'+Math.random().toString(36).slice(2);
@@ -292,13 +324,12 @@ function startRestTimer(i,j){
 }
 function pauseRestTimer(){
  const t=state.restTimer;if(!t||t.status==='stopped')return;
- if(t.running&&restElapsed(t)>=(t.targetSeconds||150)*1000){completeRest('time-up');renderRestTimer();return}
  if(t.running){t.elapsedMs=restElapsed(t);t.running=false;t.status='paused'}else{t.startedAt=Date.now();t.running=true;t.status='running'}
  recordRest();save();renderRestTimer();
 }
 function stopRestTimer(reason='manual'){
  if(!state.restTimer)return;
- if(state.restTimer.running&&restElapsed()>=(state.restTimer.targetSeconds||150)*1000)completeRest('time-up');else completeRest(reason);
+ completeRest(reason);
  renderRestTimer();
 }
 function dismissRestTimer(){
@@ -306,31 +337,44 @@ function dismissRestTimer(){
  state.restTimer=null;save();renderRestTimer();
 }
 function resetRestTimer(){
+ enableRestAudio();
  const old=state.restTimer;if(!old)return;
  stopRestTimer('restart');
  const now=Date.now();
- state.restTimer={...old,startedAt:now,firstStartedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running',endedAt:null,stopReason:''};
+ state.restTimer={...old,startedAt:now,firstStartedAt:now,elapsedMs:0,targetSeconds:state.restTargetSeconds||150,running:true,status:'running',endedAt:null,stopReason:'',targetReached:false,minimized:false};
  recordRest();save();renderRestTimer();
 }
 function changeRestTarget(value){
  const n=Number(value);if(![60,90,120,150,180,240,300].includes(n))return;
  state.restTargetSeconds=n;save();
 }
+
+function minimizeRestTimer(){
+ if(!state.restTimer)return;
+ state.restTimer.minimized=true;save();renderRestTimer();
+}
+function expandRestTimer(){if(!state.restTimer)return;enableRestAudio();state.restTimer.minimized=false;save();renderRestTimer()}
 function renderRestTimer(){
  const host=document.querySelector('#rest-timer');if(!host)return;
- const t=state.restTimer;host.hidden=!t;if(!t){host.innerHTML='';return}
- const target=(t.targetSeconds||150)*1000,elapsed=restElapsed(t);
- if(t.running&&elapsed>=target){completeRest('time-up');return renderRestTimer()}
- const stopped=t.status==='stopped',label=stopped?(t.stopReason==='time-up'?'Час відпочинку вийшов':'Відпочинок завершено'):t.running?'Відпочинок':'Пауза';
- host.dataset.status=stopped?'stopped':t.running?'running':'paused';
- host.innerHTML='<div class="rest-timer-heading"><b>'+label+'</b><button type="button" aria-label="Закрити таймер" onclick="dismissRestTimer()">×</button></div><small>'+esc(t.exercise)+' · після підходу '+t.setNumber+'</small>'+
- '<div class="rest-timer-clock" id="rest-clock" role="timer" aria-label="Залишилось часу відпочинку">'+(stopped?restClock(t.elapsedMs):restClock(target-elapsed))+'</div>'+
+ const t=state.restTimer;host.hidden=!t;
+ if(!t){host.innerHTML='';host.classList.remove('rest-fullscreen');return}
+ const target=(t.targetSeconds||150)*1000,elapsed=restElapsed(t),stopped=t.status==='stopped',overtime=elapsed>=target;
+ const full=!t.minimized&&!stopped;
+ host.classList.toggle('rest-fullscreen',full);
+ host.dataset.status=stopped?'stopped':!t.running?'paused':overtime?'overtime':'running';
+ const label=stopped?'Відпочинок завершено':!t.running?'Пауза':overtime?'Час вийшов — відпочинок триває':'Відпочинок';
+ host.innerHTML='<div class="rest-timer-inner"><div class="rest-timer-heading"><b>'+label+'</b>'+
+ (stopped?'<button type="button" aria-label="Закрити таймер" onclick="dismissRestTimer()">×</button>':full?'<button type="button" aria-label="Згорнути таймер без зупинки" onclick="minimizeRestTimer()">↙ Згорнути</button>':'<button type="button" aria-label="Розгорнути таймер на весь екран" onclick="expandRestTimer()">↗ На весь екран</button>')+
+ '</div><small>'+esc(t.exercise)+' · після підходу '+t.setNumber+'</small>'+
+ '<div class="rest-timer-clock" id="rest-clock" role="timer" aria-label="Таймер відпочинку">'+restDisplay(t)+'</div>'+
+ '<div id="rest-elapsed" class="rest-elapsed">Загальний відпочинок '+restClock(elapsed)+'</div>'+
  '<div class="rest-progress-track"><div id="rest-progress" style="width:'+Math.min(100,elapsed/target*100)+'%"></div></div>'+
- '<div class="rest-state" role="status">'+(stopped?'✓ Зафіксовано '+restClock(t.elapsedMs)+(t.stopReason==='manual'&&t.elapsedMs<target?' · завершено раніше':''):(t.running?'● Відлік до '+restClock(target):'Ⅱ Відлік призупинений'))+'</div>'+
+ '<div class="rest-state" role="status">'+(stopped?'✓ Час зафіксовано':!t.running?'Ⅱ Відлік призупинений':overtime?'Планові '+restClock(target)+' минули. Фактичний час продовжує рахуватися.':'● Плановий відпочинок '+restClock(target))+'</div>'+
  '<small>Початок '+restTimeLabel(t.firstStartedAt||t.startedAt)+(t.endedAt?' · Завершення '+restTimeLabel(t.endedAt):'')+'</small>'+
- '<div class="rest-timer-actions">'+(stopped?'<button type="button" onclick="resetRestTimer()">Новий відлік</button><button type="button" onclick="dismissRestTimer()">Закрити</button>':'<button type="button" onclick="pauseRestTimer()">'+(t.running?'Пауза':'Продовжити')+'</button><button type="button" onclick="stopRestTimer()">Почати підхід</button>')+'</div>'+
+ '<div class="rest-timer-actions">'+(stopped?'<button type="button" onclick="resetRestTimer()">Новий відлік</button><button type="button" onclick="dismissRestTimer()">Закрити</button>':'<button type="button" class="rest-start-set" onclick="stopRestTimer()">Почати наступний підхід</button><button type="button" onclick="pauseRestTimer()">'+(t.running?'Пауза':'Продовжити')+'</button>')+'</div>'+
+ '<div class="rest-audio-controls"><button type="button" onclick="toggleRestSound()">'+(state.restSoundEnabled===false?'Звук: вимкнено':'Звук: увімкнено')+'</button><button type="button" onclick="testRestSound()">Перевірити звук</button></div>'+
  '<label class="rest-target-label">Наступний відпочинок <select aria-label="Тривалість наступного відпочинку" onchange="changeRestTarget(this.value)">'+[60,90,120,150,180,240,300].map(n=>'<option value="'+n+'" '+(n===(state.restTargetSeconds||150)?'selected':'')+'>'+restClock(n*1000)+'</option>').join('')+'</select></label>'+
- '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'«Почати підхід» зупиняє відпочинок і фіксує час.')+'</small>';
+ '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'Згорнути — не зупиняє таймер. Час фіксується кнопкою «Почати наступний підхід».')+'</small></div>';
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});render();
 
