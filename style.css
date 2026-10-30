@@ -86,3 +86,5 @@ input[type=number]{font-size:max(16px,calc(12px * var(--font-scale,1.15)))}
 @media(max-height:650px){.rest-docked .rest-timer-clock{margin:12px 0 4px}.rest-docked .rest-timer-actions{margin:10px 0}.rest-docked .rest-timer-actions button{min-height:44px}.rest-docked .rest-elapsed{margin-bottom:8px}}
 
 .weight-mode-note{font-size:calc(11px * var(--font-scale,1.15));color:#54705b;background:#f1f6ed;padding:10px 12px;border-radius:8px;margin:10px 0 15px;line-height:1.6}
+
+.rest-undo{display:block;width:100%;border:1px solid #ffffff70;border-radius:8px;padding:11px;margin:12px 0;color:#fff;min-height:44px;font-size:13px;text-align:center}.rest-undo:hover{background:#ffffff18}

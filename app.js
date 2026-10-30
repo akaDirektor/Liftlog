@@ -6,7 +6,7 @@ function exercise(e,i){let info=state.library.find(x=>x.id===e.id);return `<div 
 function change(i,j,k,el){let v=el.value===''?'':Number(el.value);if(v!==''&&(!Number.isFinite(v)||v<Number(el.min||0)||v>Number(el.max)||(k[1]==='r'&&!Number.isInteger(v)))){el.value=session().exercises[i].sets[j][k];toast('Перевір значення');return}let x=session().exercises[i].sets[j];x[k]=v;if(x.done&&(x.fr===''||x.fw===''))x.done=false;session().finished=false;save();refreshTotals()}
 function refreshTotals(){let t=totals();$('#fact-total').innerHTML=`${fmt(t.fact)} <span>кг</span>`;$('#plan-total').textContent=`із ${fmt(t.plan)} кг за планом`;$('#bar').style.width=(Math.min(100,t.fact/t.plan*100)||0)+'%';$('#set-count').textContent=`${t.done} із ${t.count} підходів`;$('#percent').textContent=(Math.round(t.fact/t.plan*100)||0)+'% плану';refreshExerciseVolumes()}
 function toggleSet(i,j){let x=session().exercises[i].sets[j];if(!x.done&&(x.fw===''||x.fr===''||Number(x.fr)<=0)){toast('Вкажи фактичну вагу та кількість повторів');return}x.done=!x.done;if(x.done)startRestTimer(i,j);else if(state.restTimer?.setId===x.restTimerId)dismissRestTimer();session().finished=false;render()}function addSet(i){let a=session().exercises[i].sets;a.push({...a.at(-1),fw:'',fr:'',done:false});render()}function setKind(k){state.kind=k;render()}function setWeek(w){state.week=w;render()}
-function finish(){stopRestTimer('workout-complete');let s=session(),t=totals();if(!t.done){toast('Спочатку запиши та відміть виконані підходи');return}let record={key:key(),kind:state.kind,week:state.week,cycle:state.cycle,date:s.date,...t,notes:s.notes||'',exercises:snapshotExercises(s.exercises)};let i=state.history.findIndex(h=>h.key===key());if(i<0)state.history.push(record);else state.history[i]=record;s.finished=true;render();toast(t.done<t.count?'Збережено частково виконане тренування':'Тренування збережено. Гарна робота!')}
+function finish(){stopRestTimer('workout-complete');clearTimerUndo();let s=session(),t=totals();if(!t.done){toast('Спочатку запиши та відміть виконані підходи');return}let record={key:key(),kind:state.kind,week:state.week,cycle:state.cycle,date:s.date,...t,notes:s.notes||'',exercises:snapshotExercises(s.exercises)};let i=state.history.findIndex(h=>h.key===key());if(i<0)state.history.push(record);else state.history[i]=record;s.finished=true;render();toast(t.done<t.count?'Збережено частково виконане тренування':'Тренування збережено. Гарна робота!')}
 function library(){return `<div class="card"><div class="row"><div><h2>Моя бібліотека</h2><p style="font-size:12px">Твоя бібліотека: додавай, редагуй і видаляй непотрібні вправи.</p></div><button class="secondary" onclick="editExercise()">＋ Своя вправа</button></div>${state.library.filter(e=>!e.deleted).map(e=>`<div class="library-row"><div><b>${esc(e.name)}</b><small>${title(e.group)} · ${weightModeLabel(e.weightMode||(e.loadMode==='bodyweight'?'bodyweight':'total'))} · ${e.weight} кг × ${e.reps}</small></div><div class="library-actions"><button onclick="editExercise(${e.id})">Редагувати ↗</button><button class="danger" onclick="deleteLibraryExercise(${e.id})">Видалити</button></div></div>`).join('')}</div>`}
 function modal(html){$('#dialog').innerHTML=html;$('#dialog').showModal()}function editExercise(id){let e=state.library.find(e=>e.id===id);modal(`<h2>${e?'Редагувати':'Нова'} вправа</h2><form id="libform"><input name="name" aria-label="Назва вправи" placeholder="Назва вправи" required maxlength="100" value="${esc(e?.name||'')}"><select name="group"><option value="back">Спина + біцепс</option><option value="chest" ${e?.group==='chest'?'selected':''}>Груди + трицепс</option></select><label>Облік ваги<select name="weightMode">${weightModeOptions(e?.weightMode||(e?.loadMode==='bodyweight'?'bodyweight':'total'))}</select></label><label>Базова вага, кг (для гантелей — однієї)<input name="weight" type="number" min="${e?.loadMode==='bodyweight'?-300:0}" max="1000" step="0.5" required value="${e?.weight??20}"></label><label>Повторів<input name="reps" type="number" min="1" max="200" required value="${e?.reps||12}"></label><small>Дві гантелі / дві сторони: вводь вагу однієї гантелі й повтори на сторону, тоннаж ×2. Історичні записи не змінюються. Базова вага має відповідати вибраному способу обліку.</small><button class="primary">Зберегти</button><button type="button" class="secondary" onclick="$('#dialog').close()">Скасувати</button></form>`);$('#libform').onsubmit=ev=>{ev.preventDefault();let d=new FormData(ev.target),obj={id:id||Date.now(),...e,name:d.get('name').trim(),group:d.get('group'),weightMode:d.get('weightMode'),loadMode:d.get('weightMode')==='bodyweight'?'bodyweight':undefined,weight:+d.get('weight'),reps:+d.get('reps')};if(!obj.name)return;let idx=state.library.findIndex(e=>e.id===id);if(idx<0)state.library.push(obj);else state.library[idx]=obj;$('#dialog').close();render()}}
 function chooseExercise(callback){if(!state.library.some(e=>!e.deleted)){toast('Бібліотека порожня. Додай свою вправу в «Мої вправи».');return}modal(`<h2>Обери зі своїх вправ</h2><select id="choice">${state.library.filter(e=>!e.deleted).map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select><button class="primary" id="choose">Обрати</button><button class="secondary" onclick="$('#dialog').close()">Скасувати</button>`);$('#choose').onclick=()=>{callback(state.library.find(e=>e.id===Number($('#choice').value)));$('#dialog').close();render()}}function newExercise(e){return {id:e.id,weightMode:e.weightMode||(e.loadMode==='bodyweight'?'bodyweight':'total'),loadMode:e.loadMode,sets:Array.from({length:3},()=>({pw:e.weight,pr:e.reps,fw:'',fr:'',done:false}))}}function replaceExercise(i){chooseExercise(e=>{session().exercises[i]=newExercise(e);session().finished=false})}function addExercise(){chooseExercise(e=>{session().exercises.push(newExercise(e));session().finished=false})}
@@ -179,7 +179,7 @@ function startNewWorkout(){
  $('#start-new-workout').onclick=()=>createNewWorkout();
 }
 function createNewWorkout(){
- stopRestTimer('workout-complete');
+ stopRestTimer('workout-complete');clearTimerUndo();
  const previous=session();
  archiveCurrentWorkout();
  const exercises=previous.exercises.filter(e=>!state.library.find(x=>x.id===e.id)?.deleted).map(e=>({
@@ -239,6 +239,7 @@ function addHistorySet(i){
  const a=historyDraft.exercises[i].sets,last=a.at(-1);a.push({pw:last?.pw??0,pr:last?.pr??10,fw:last?.fw??0,fr:last?.fr??10,done:false});renderHistoryEditor();
 }
 function saveHistoryEdits(){
+ clearTimerUndo();
  const draft=historyDraft,old=state.history[historyDraftIndex];if(!draft||!old||old.key!==draft.key)return;
  if(draft.exercises.some(e=>e.sets.some(s=>s.done&&(Number(s.fr)<=0||s.fw===''||s.fr==='')))){toast('Для виконаних підходів вкажи вагу та повтори більше нуля');return}
  const t=totals(draft);
@@ -404,8 +405,8 @@ function minimizeRestTimer(){
 function expandRestTimer(){if(!state.restTimer)return;enableRestAudio();state.restTimer.minimized=false;state.restTimer.mobileExpanded=true;save();renderRestTimer()}
 function renderRestTimer(){
  const host=document.querySelector('#rest-timer');if(!host)return;
- const t=state.restTimer;host.hidden=!t;
- if(!t){host.innerHTML='';host.classList.remove('rest-fullscreen','rest-docked');host.style.removeProperty('--rest-left');host.style.removeProperty('--rest-width');return}
+ const t=state.restTimer;host.hidden=!t&&!(state.timerUndoStack?.length);
+ if(!t){host.innerHTML=state.timerUndoStack?.length?'<b>Таймер закритий</b><button class="rest-undo" onclick="undoTimerAction()">↶ Скасувати останню дію</button>':'';host.classList.remove('rest-fullscreen','rest-docked');host.style.removeProperty('--rest-left');host.style.removeProperty('--rest-width');return}
  const target=(t.targetSeconds||150)*1000,elapsed=restElapsed(t),stopped=t.status==='stopped',overtime=elapsed>=target;
  const dock=window.innerWidth>1000&&tab==='workout'&&!t.minimized;
  const full=window.innerWidth<=1000&&t.mobileExpanded&&!t.minimized&&!stopped;
@@ -421,6 +422,7 @@ function renderRestTimer(){
  '<div class="rest-state" role="status">'+(stopped?'✓ Час зафіксовано':!t.running?'Ⅱ Відлік призупинений':overtime?'Планові '+restClock(target)+' минули. Фактичний час продовжує рахуватися.':'● Плановий відпочинок '+restClock(target))+'</div>'+
  '<small>Початок '+restTimeLabel(t.firstStartedAt||t.startedAt)+(t.endedAt?' · Завершення '+restTimeLabel(t.endedAt):'')+'</small>'+
  '<div class="rest-timer-actions">'+(stopped?'<button type="button" onclick="resetRestTimer()">Новий відлік</button><button type="button" onclick="dismissRestTimer()">Закрити</button>':'<button type="button" class="rest-start-set" onclick="stopRestTimer()">Почати наступний підхід</button><button type="button" onclick="pauseRestTimer()">'+(t.running?'Пауза':'Продовжити')+'</button>')+'</div>'+
+ (state.timerUndoStack?.length?'<button type="button" class="rest-undo" onclick="undoTimerAction()">↶ Скасувати: '+esc(state.timerUndoStack.at(-1).label)+'</button>':'')+
  '<div class="rest-audio-controls"><button type="button" onclick="toggleRestSound()">'+(state.restSoundEnabled===false?'Звук: вимкнено':'Звук: увімкнено')+'</button><button type="button" onclick="testRestSound()">Перевірити сирену</button></div>'+
  '<label class="rest-target-label">Наступний відпочинок <select aria-label="Тривалість наступного відпочинку" onchange="changeRestTarget(this.value)">'+[60,90,120,150,180,240,300].map(n=>'<option value="'+n+'" '+(n===(state.restTargetSeconds||150)?'selected':'')+'>'+restClock(n*1000)+'</option>').join('')+'</select></label>'+
  '<small>'+(stopped?'Наступна галочка ✓ запустить новий відпочинок.':'Згорнути — не зупиняє таймер. Час фіксується кнопкою «Почати наступний підхід».')+'</small></div>';
@@ -434,6 +436,64 @@ function syncRestPanel(){
 }
 window.addEventListener('resize',()=>renderRestTimer());
 window.addEventListener('scroll',()=>syncRestPanel(),{passive:true});
+
+let timerActionDepth=0;
+const restFields=['restTimerId','restSeconds','restStatus','restStartedAt','restEndedAt','restStopReason','restLog'];
+function timerUndoSnapshot(label,doneSet){
+ const sets=[];
+ for(const [workoutKey,s] of Object.entries(state.sessions)){
+  for(const e of s.exercises)for(const set of e.sets){
+   set.timerUndoId??='set-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+   const rest={};for(const field of restFields)if(Object.hasOwn(set,field))rest[field]=structuredClone(set[field]);
+   sets.push({id:set.timerUndoId,workoutKey,rest,...(set===doneSet?{done:set.done,finished:s.finished}:{})});
+  }
+ }
+ return {label,timer:structuredClone(state.restTimer||null),sets};
+}
+function runTimerAction(label,action,doneSet){
+ if(timerActionDepth)return action();
+ const before=timerUndoSnapshot(label,doneSet);timerActionDepth++;
+ try{
+ const result=action(),after=timerUndoSnapshot(label,doneSet);
+ if(JSON.stringify(before)!==JSON.stringify(after)){
+  state.timerUndoStack??=[];state.timerUndoStack.push(before);
+  if(state.timerUndoStack.length>10)state.timerUndoStack.shift();
+  save();renderRestTimer();
+ }
+ return result;
+ }finally{timerActionDepth--}
+}
+function undoTimerAction(){
+ const stack=state.timerUndoStack||[],snapshot=stack.at(-1);if(!snapshot)return;
+ const current=new Map();
+ for(const [workoutKey,s] of Object.entries(state.sessions))for(const e of s.exercises)for(const set of e.sets)if(set.timerUndoId)current.set(set.timerUndoId,{set,session:s,workoutKey});
+ // Never recreate a deleted set or erase notes, weights, or repetitions.
+ if(snapshot.timer&&!snapshot.sets.some(x=>x.rest.restTimerId===snapshot.timer.setId&&current.has(x.id))){toast('Підхід попереднього таймера вже видалений');return}
+ stack.pop();
+ for(const entry of snapshot.sets){
+  const found=current.get(entry.id);if(!found)continue;
+  for(const field of restFields)delete found.set[field];
+  Object.assign(found.set,structuredClone(entry.rest));
+  if(Object.hasOwn(entry,'done')){found.set.done=entry.done;found.session.finished=entry.finished}
+ }
+ state.restTimer=structuredClone(snapshot.timer);
+ // Keep the original start timestamp: accidental clicks do not erase elapsed rest.
+ save();render();renderRestTimer();toast('Скасовано: '+snapshot.label);
+}
+function clearTimerUndo(){state.timerUndoStack=[]}
+const originalToggleSet=toggleSet;
+toggleSet=function(i,j){const set=session().exercises[i]?.sets[j];return runTimerAction('галочка підходу',()=>originalToggleSet(i,j),set)};
+const originalStartRest=startRestTimer;
+startRestTimer=function(i,j){return runTimerAction('запуск відпочинку',()=>originalStartRest(i,j))};
+const originalStopRest=stopRestTimer;
+stopRestTimer=function(reason='manual'){return runTimerAction('завершення відпочинку',()=>originalStopRest(reason))};
+const originalPauseRest=pauseRestTimer;
+pauseRestTimer=function(){return runTimerAction('пауза / продовження',()=>originalPauseRest())};
+const originalResetRest=resetRestTimer;
+resetRestTimer=function(){return runTimerAction('новий відлік',()=>originalResetRest())};
+const originalDismissRest=dismissRestTimer;
+dismissRestTimer=function(){return runTimerAction('закриття таймера',()=>originalDismissRest())};
+
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});render();
 
 function setFontSize(value){
