@@ -1,6 +1,6 @@
-const $=s=>document.querySelector(s),fmt=n=>new Intl.NumberFormat('uk-UA',{maximumFractionDigits:1}).format(n),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=s=>document.querySelector(s),fmt=n=>new Intl.NumberFormat('uk-UA',{maximumFractionDigits:2}).format(n),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initial={week:1,kind:'back',cycle:1,library:[{id:1,name:'Тяга верхнього блока',group:'back',weight:50,reps:12},{id:2,name:'Тяга горизонтального блока',group:'back',weight:45,reps:12},{id:3,name:'Тяга гантелі в нахилі',group:'back',weight:22,reps:10},{id:4,name:'Згинання рук зі штангою',group:'back',weight:25,reps:12},{id:5,name:'Жим штанги лежачи',group:'chest',weight:60,reps:10},{id:6,name:'Жим гантелей під кутом',group:'chest',weight:20,reps:12},{id:7,name:'Розведення в кросовері',group:'chest',weight:15,reps:12},{id:8,name:'Розгинання рук на блоці',group:'chest',weight:25,reps:12}],sessions:{},history:[]};let state;try{state=JSON.parse(localStorage.getItem('liftlog-v1'))||initial}catch{state=initial}let tab='workout';const workoutKinds=['back','chest','legs'];const title=k=>({back:'Спина + біцепс',chest:'Груди + трицепс',legs:'Ноги + плечі'}[k]||'Тренування');const slot=()=>`${state.cycle}-${state.week}-${state.kind}`;const key=()=>state.activeSessions?.[slot()]||slot();function save(){preserveHistoryBackup();localStorage.setItem('liftlog-v1',JSON.stringify(state))}function session(){let k=key();if(!state.sessions[k]){let mult=state.week===7?.6:1+(state.week-1)*.025;state.sessions[k]={date:localDate(),finished:false,exercises:state.library.filter(e=>!e.deleted&&e.group===state.kind).map(e=>({id:e.id,weightMode:e.weightMode||(e.loadMode==='bodyweight'?'bodyweight':'total'),loadMode:e.loadMode,sets:Array.from({length:3},()=>({pw:e.loadMode==='bodyweight'?e.weight:Math.round(e.weight*mult*2)/2,pr:e.reps,fw:'',fr:'',done:false}))}))};}state.sessions[k].exercises.forEach(e=>{preparePlanLinks(e);e.sets.forEach(prepareSet)});return state.sessions[k]}function totals(s=session()){return s.exercises.reduce((a,e)=>{e.sets.forEach(x=>{a.plan+=effectiveLoad(e,x.pw)*x.pr;if(x.done){a.fact+=effectiveLoad(e,x.fw)*Number(x.fr);a.done++}a.count++});return a},{plan:0,fact:0,done:0,count:0})}function toast(t){$('#toast').textContent=t;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',2800)}
-function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));let headings={workout:['Кожен підхід має значення.','Плануй, тренуйся та спостерігай, як зростає твоя сила.'],progress:['Твоя сила в цифрах.','Кожне завершене тренування — ще один крок уперед.'],library:['Тільки твої вправи.','Невелика бібліотека. Жодного зайвого пошуку.'],cycle:['Ритм твого прогресу.','Шість тижнів наростання. Один тиждень відновлення.']};$('#app').innerHTML=`<div class="heading"><div><h1>${headings[tab][0]}</h1><p>${headings[tab][1]}</p></div><span class="pill">Цикл ${state.cycle} · Тиждень ${state.week} із 7</span></div>`+({workout:workout,progress:progress,library:library,cycle:cycle}[tab])();save();renderRestTimer()}
+function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));let headings={planning:['Твій план на шість тижнів.','Задай базу й прогресію — решта тижнів заповниться автоматично.'],workout:['Кожен підхід має значення.','Плануй, тренуйся та спостерігай, як зростає твоя сила.'],progress:['Твоя сила в цифрах.','Кожне завершене тренування — ще один крок уперед.'],library:['Тільки твої вправи.','Невелика бібліотека. Жодного зайвого пошуку.'],cycle:['Ритм твого прогресу.','Шість тижнів наростання. Один тиждень відновлення.']};$('#app').innerHTML=`<div class="heading"><div><h1>${headings[tab][0]}</h1><p>${headings[tab][1]}</p></div><span class="pill">${tab==='planning'?'Макроплан · 6 тижнів':`Цикл ${state.cycle} · Тиждень ${state.week} із 7`}</span></div>`+({workout:workout,progress:progress,library:library,cycle:cycle,planning:planning}[tab])();save();renderRestTimer()}
 function workout(){let s=session();if(s.finished)return workoutKindTabs()+completedWorkout();let t=totals(),history=state.history.filter(h=>h.kind===state.kind),last=history.at(-1);return `<div class="card cycle-mini"><div><span class="eyebrow">ПОТОЧНИЙ ЦИКЛ</span><div style="margin-top:6px;font-weight:700;font-size:12px">${state.week===7?'Тиждень відновлення':'Поступове наростання навантаження'}</div></div><div class="week-dots">${Array.from({length:7},(_,i)=>`<button class="${state.week===i+1?'current':''} ${i===6?'deload':''}" onclick="setWeek(${i+1})" title="Тиждень ${i+1}">${i===6?'↘':i+1}</button>`).join('')}</div></div>${workoutKindTabs()}<div class="grid"><div><section class="card"><div class="work-head"><div><h2>${title(state.kind)}</h2><small>${s.exercises.length} вправи · ${t.count} підходів · <input aria-label="Дата тренування" type="date" value="${s.date}" onchange="session().date=this.value;save()" style="border:0;color:#89919c;background:none;font-size:11px"></small></div><div class="work-actions"><span class="badge">${s.finished?'Завершено':'План → виконання'}</span><button class="secondary" onclick="beginWorkTimer()">Почати замір підходу</button><button class="secondary new-workout" onclick="startNewWorkout()">＋ Нове тренування</button></div></div>${s.exercises.map((e,i)=>exercise(e,i)).join('')}<label class="notes-label">Примітки до тренування<textarea maxlength="5000" placeholder="Самопочуття, цілі, що врахувати…" oninput="session().notes=this.value;save()">${esc(s.notes||'')}</textarea></label><button class="secondary" style="margin-top:20px" onclick="addExercise()">＋ Додати вправу</button></section><p class="footer-note">Тоннаж = вага × повтори. Для гантелей: вага однієї гантелі та повтори на сторону; один підхід — обидві сторони.</p></div><div class="right"><section class="card total"><span class="eyebrow">ПІДНЯТО СЬОГОДНІ</span><div class="big" id="fact-total">${fmt(t.fact)} <span>кг</span></div><p style="font-size:11px" id="plan-total">із ${fmt(t.plan)} кг за планом</p><div class="track"><i id="bar" style="width:${Math.min(100,t.fact/t.plan*100)||0}%"></i></div><div class="total-footer"><span id="set-count">${t.done} із ${t.count} підходів</span><span id="percent">${Math.round(t.fact/t.plan*100)||0}% плану</span></div><button class="primary" onclick="finish()">${s.finished?'Оновити результат':'Завершити тренування'} &nbsp; ↗</button></section><section class="card"><div class="eyebrow">МИНУЛОГО РАЗУ</div>${last?`<div class="big" style="font-size:30px">${fmt(last.fact)} <span>кг</span></div><small>${last.date} · ${last.done} підходів</small>`:`<div style="font-size:24px;margin:18px 0">Перший крок ↗</div><p style="font-size:11px">Заверши тренування, щоб почати свою історію прогресу.</p>`}<div class="statline"><span>Ціль цього тижня</span><b>${state.week===7?'Відновлення':'+'+(state.week-1)*2.5+'% ваги'}</b></div><div class="statline"><span>Тренувань у циклі</span><b>${state.history.filter(h=>h.cycle===state.cycle).length} виконано</b></div></section><div class="note">↗ &nbsp; План — твій орієнтир. Записуй фактичні повтори й вагу, навіть якщо вони відрізняються.</div></div></div>`}
 function exercise(e,i){let info=state.library.find(x=>x.id===e.id);return `<div class="exercise" data-exercise="${i}"><div class="exercise-title"><span class="num">0${i+1}</span><div><b>${esc(info?.name||'Вправа')}</b><small>${e.sets.length} підходи</small></div><div class="exercise-actions"><button onclick="replaceExercise(${i})">Замінити ⇄</button><button class="danger" onclick="removeWorkoutExercise(${i})">Прибрати</button></div></div>${exerciseWeightMode(e)==='bodyweight'?pullupHelp(e,i):''}<div class="weight-mode-note">${weightModeLabel(exerciseWeightMode(e))}</div><table class="sets"><thead><tr><th>ПІДХІД</th><th>${info?.loadMode==='bodyweight'?'ПЛАН ±КГ':'ПЛАН, КГ'}</th><th>ПОВТОРИ</th><th>${info?.loadMode==='bodyweight'?'ФАКТ ±КГ':'ФАКТ, КГ'}</th><th>ПОВТОРИ</th><th>ГОТОВО</th></tr></thead><tbody>${e.sets.map((s,j)=>`<tr data-set="${j}"><td><span>${j+1}</span><button class="delete-set" aria-label="Видалити підхід ${j+1}" title="Видалити підхід" onclick="deleteSet(${i},${j})">×</button></td>${['pw','pr','fw','fr'].map(k=>`<td><input aria-label="${esc(info?.name)} підхід ${j+1} ${k}" data-field="${k}" class="${k[0]==='f'?'fact':''}" type="number" min="${info?.loadMode==='bodyweight'&&k[1]==='w'?-300:0}" max="${k[1]==='r'?200:1000}" step="${k[1]==='r'?1:.5}" value="${s[k]}" placeholder="—" oninput="change(${i},${j},'${k}',this)"></td>`).join('')}<td><button aria-label="Відмітити підхід ${j+1}" class="check ${s.done?'done':''}" onclick="toggleSet(${i},${j})">✓</button></td></tr>${setVolumeRow(e,s,j)}`).join('')}</tbody></table><div class="exercise-volume" data-volume-summary>${exerciseVolumeSummary(e)}</div><label class="notes-label">Примітки до вправи<textarea maxlength="3000" placeholder="Техніка, відчуття, відпочинок…" oninput="session().exercises[${i}].notes=this.value;save()">${esc(e.notes||'')}</textarea></label><button style="font-size:10px;color:#89919c;margin:8px 0 0 42px" onclick="addSet(${i})">＋ Підхід</button></div>`}
 function change(i,j,k,el){let v=el.value===''?'':Number(el.value);if(v!==''&&(!Number.isFinite(v)||v<Number(el.min||0)||v>Number(el.max)||(k[1]==='r'&&!Number.isInteger(v)))){el.value=session().exercises[i].sets[j][k];toast('Перевір значення');return}let x=session().exercises[i].sets[j];x[k]=v;if(x.done&&(x.fr===''||x.fw===''))x.done=false;session().finished=false;save();refreshTotals()}
@@ -659,6 +659,130 @@ function cleanupFinishedTimer(){
  if((finishedOwner||finishedCurrent)&&(state.restTimer||state.timerUndoStack?.length)){
   state.restTimer=null;state.timerUndoStack=[];save();
  }
+}
+
+
+let planKind='back',planCycle=null;
+function planExerciseFromHistory(e){
+ const library=state.library.find(x=>x.id===e.id);
+ const oldMode=exerciseWeightMode(e),mode=library?.weightMode||oldMode;
+ const ratio=oldMode==='bodyweight'||mode==='bodyweight'?1:weightMultiplier(oldMode)/weightMultiplier(mode);
+ return {
+  uid:'plan-'+Date.now()+'-'+Math.random().toString(36).slice(2),id:e.id,name:e.name||library?.name||'Вправа',
+  weightMode:mode,loadMode:mode==='bodyweight'?'bodyweight':undefined,bodyWeight:e.bodyWeight||'',
+  notes:'',overrides:{},
+  sets:e.sets.filter(s=>s.done).map(s=>({pw:Number(s.fw)*ratio,pr:Number(s.fr)}))
+ };
+}
+function plannerRoot(){
+ state.macroPlans??={};
+ const id=String(planCycle??state.cycle);
+ if(!state.macroPlans[id]){
+  const latest=state.history.map((h,index)=>({h,index})).sort((a,b)=>b.h.date.localeCompare(a.h.date)||b.index-a.index).slice(0,2).map(x=>x.h);
+  const root={id:Number(id),createdAt:new Date().toISOString(),workouts:{}};
+  for(const kind of workoutKinds)root.workouts[kind]={weightStep:0,repStep:0,rounding:.5,exercises:[],source:null};
+  // Seed each type once using the most recent of the last two records.
+  for(const h of latest){
+   const p=root.workouts[h.kind];if(!p||p.source)continue;
+   p.exercises=(h.exercises||[]).map(planExerciseFromHistory).filter(e=>e.sets.length);
+   p.source={date:h.date,key:h.key,fact:h.fact};
+  }
+  state.macroPlans[id]=root;
+ }
+ return state.macroPlans[id];
+}
+function plannerWorkout(){return plannerRoot().workouts[planKind]}
+function planSets(e,week,p=plannerWorkout()){
+ if(week>0&&e.overrides?.[week])return structuredClone(e.overrides[week]);
+ const step=Number(p.weightStep)||0,reps=Number(p.repStep)||0,rounding=Number(p.rounding)||.5;
+ return e.sets.map(s=>{
+ const base=Number(s.pw)||0;
+ const weight=week===0||step===0||e.weightMode==='bodyweight'?base:Math.round(base*(1+week*step/100)/rounding)*rounding;
+ return {pw:Math.min(1000,Math.max(e.weightMode==='bodyweight'?-300:0,Number(weight.toFixed(3)))),pr:Math.min(200,Math.max(1,(Number(s.pr)||1)+week*reps))};
+ });
+}
+function planVolume(e,sets){
+ return sets.reduce((sum,s)=>sum+effectiveLoad(e,s.pw)*s.pr,0);
+}
+function planWeekVolume(p,week){return p.exercises.reduce((sum,e)=>sum+planVolume(e,planSets(e,week,p)),0)}
+function planning(){
+ const root=plannerRoot(),p=plannerWorkout(),ids=Object.keys(state.macroPlans).map(Number).sort((a,b)=>a-b);
+ const baseSets=p.exercises.reduce((n,e)=>n+e.sets.length,0);
+ return '<section class="card planning-intro"><div class="row"><div><span class="eyebrow">ОКРЕМИЙ МАКРОПЛАН · 6 ТИЖНІВ</span><p>Планування зберігається на цьому пристрої. Воно поки не змінює твої тренування.</p></div><div class="plan-toolbar"><select aria-label="Макроплан" onchange="planCycle=Number(this.value);render()">'+ids.map(id=>'<option value="'+id+'" '+(root.id===id?'selected':'')+'>Макроплан '+id+'</option>').join('')+'</select><button class="secondary" onclick="newMacroPlan()">＋ Новий план</button></div></div></section>'+
+ '<div class="split workout-kind-tabs">'+workoutKinds.map(kind=>'<button class="'+(planKind===kind?'selected':'')+'" onclick="planKind=\''+kind+'\';render()">'+title(kind)+'</button>').join('')+'</div>'+
+ '<section class="card"><div class="row"><div><h2>1. База першого тижня</h2><p>'+esc(title(planKind))+' · '+p.exercises.length+' вправ · '+baseSets+' підходів</p><small>'+(p.source?'Джерело: завершене тренування '+esc(p.source.date)+'. Перенесені фактичні ваги й повтори виконаних підходів.':'Для цього типу немає бази серед останніх двох тренувань. Додай свої вправи або обери тренування з історії.')+'</small></div><div class="plan-toolbar"><button class="secondary" onclick="choosePlannerHistory()">Взяти базу з історії</button><button class="secondary" onclick="addPlannerExercise()">＋ Вправа</button></div></div>'+
+ (p.exercises.length?'<div class="plan-base-list">'+p.exercises.map((e,i)=>'<div class="plan-base-row"><div><b>'+esc(e.name)+'</b><small>'+esc(weightModeLabel(e.weightMode))+'</small><p>'+e.sets.map(s=>fmt(s.pw)+' × '+s.pr).join(' · ')+'</p></div><div class="plan-toolbar"><button class="secondary" onclick="editPlannerExercise('+i+',0)">Редагувати базу</button><button class="plan-remove" onclick="removePlannerExercise('+i+')">Прибрати</button></div></div>').join('')+'</div>':'<div class="empty"><p>Почни з «＋ Вправа» або «Взяти базу з історії».</p></div>')+'</section>'+
+ '<section class="card"><h2>2. Автоматична прогресія</h2><p>Зміни ці значення — тижні 2–6 перерахуються одразу від бази першого тижня.</p><div class="plan-progression"><label>Приріст ваги за тиждень, %<input type="number" aria-label="Приріст ваги за тиждень" min="-20" max="50" step="0.5" value="'+p.weightStep+'" oninput="setPlanProgression(\'weightStep\',this)" onchange="setPlanProgression(\'weightStep\',this)"></label><label>Додати повторів за тиждень<input type="number" aria-label="Приріст повторів за тиждень" min="-10" max="20" step="1" value="'+p.repStep+'" oninput="setPlanProgression(\'repStep\',this)" onchange="setPlanProgression(\'repStep\',this)"></label><label>Крок ваги, кг<select aria-label="Крок округлення ваги" onchange="setPlanProgression(\'rounding\',this)">'+[.25,.5,1,2,2.5,5].map(n=>'<option value="'+n+'" '+(p.rounding===n?'selected':'')+'>'+fmt(n)+'</option>').join('')+'</select></label></div><div class="note">Без автоматичного збільшення: залиш 0% і 0 повторів. Наприклад, +2% дасть +2%, +4%, +6%, +8%, +10% від бази для тижнів 2–6. Вага округлюється до вибраного кроку. Допомога / обтяження в підтягуваннях змінюється вручну. Ручні поправки тижнів не перезаписуються.</div></section>'+
+ '<section class="card"><div class="row"><div><h2>3. Шість тижнів перед очима</h2><p>Натисни на вправу в тижні, якщо потрібна окрема поправка.</p></div><button class="secondary" onclick="resetPlannerOverrides()">Скинути ручні поправки</button></div><div class="plan-six-weeks">'+Array.from({length:6},(_,week)=>{
+ const count=p.exercises.reduce((sum,e)=>sum+planSets(e,week,p).length,0);
+ return '<section class="plan-week-card '+(week===0?'plan-week-base':'')+'"><div class="plan-week-title"><b>Тиждень '+(week+1)+'</b><small>'+(week===0?'База':(Number(p.weightStep)*week>=0?'+':'')+fmt(Number(p.weightStep)*week)+'% · '+(Number(p.repStep)*week>=0?'+':'')+Number(p.repStep)*week+' повторів')+'</small></div><div class="plan-week-total"><b>'+fmt(planWeekVolume(p,week))+' кг</b><small>План · '+count+' підходів</small></div>'+
+ p.exercises.map((e,i)=>{const sets=planSets(e,week,p);return '<button class="plan-week-exercise" onclick="editPlannerExercise('+i+','+week+')"><b>'+esc(e.name)+'</b><span>'+sets.map(s=>fmt(s.pw)+' × '+s.pr).join(' · ')+'</span><small>'+fmt(planVolume(e,sets))+' кг'+(week>0&&e.overrides?.[week]?' · Ручна поправка':'')+'</small></button>'}).join('')+
+ '</section>';
+ }).join('')+'</div><label class="notes-label">Примітки до макроплану<textarea maxlength="5000" oninput="plannerRoot().notes=this.value;save()">'+esc(root.notes||'')+'</textarea></label></section>';
+}
+function setPlanProgression(field,el){
+ const value=Number(el.value),limits={weightStep:[-20,50],repStep:[-10,20],rounding:[.25,5]};
+ if(el.value===''||!Number.isFinite(value)||value<limits[field][0]||value>limits[field][1]||(field==='repStep'&&!Number.isInteger(value))){return}
+ plannerWorkout()[field]=value;save();refreshPlannerPreview();
+}
+
+function refreshPlannerPreview(){
+ const current=document.querySelector('.plan-six-weeks');if(!current)return;
+ const temp=document.createElement('div');temp.innerHTML=planning();
+ const next=temp.querySelector('.plan-six-weeks');if(next)current.replaceChildren(...next.childNodes);
+}
+
+function editPlannerExercise(index,week){
+ const p=plannerWorkout(),e=p.exercises[index];if(!e)return;
+ const draft=planSets(e,week,p);
+ modal('<form id="planner-set-form"><h2>'+esc(e.name)+'</h2><p>Тиждень '+(week+1)+(week===0?' · зміни бази оновлять автоматичні тижні':' · окрема ручна поправка')+'</p><small>'+esc(weightModeLabel(e.weightMode))+'</small>'+(e.weightMode==='bodyweight'?'<label>Вага тіла для планового тоннажу, кг<input id="planner-body-weight" type="number" min="1" max="400" step="any" value="'+(e.bodyWeight||'')+'"></label>':'')+'<div id="planner-set-inputs"></div><button type="button" class="secondary" id="planner-add-set">＋ Підхід</button>'+(week>0?'<button type="button" class="secondary" id="planner-skip-exercise">Не виконувати цього тижня</button>':'')+'<label class="notes-label">Примітки до вправи в плані<textarea id="planner-exercise-note" maxlength="3000">'+esc(e.notes||'')+'</textarea></label><button class="primary">Зберегти план</button><button type="button" class="secondary" onclick="document.querySelector(\'#dialog\').close()">Скасувати</button></form>');
+ function draw(){
+ const node=$('#planner-set-inputs');node.innerHTML=draft.map((s,j)=>'<div class="planner-set-row"><span>'+(j+1)+'</span><label>Вага, кг<input required type="number" data-plan-weight="'+j+'" min="'+(e.weightMode==='bodyweight'?-300:0)+'" max="1000" step="any" value="'+s.pw+'"></label><label>Повтори<input required type="number" data-plan-reps="'+j+'" min="1" max="200" step="1" value="'+s.pr+'"></label><button type="button" data-plan-delete="'+j+'" aria-label="Прибрати підхід '+(j+1)+'">×</button></div>').join('');
+ node.querySelectorAll('[data-plan-weight]').forEach(input=>input.oninput=()=>draft[Number(input.dataset.planWeight)].pw=input.value===''?'':Number(input.value));
+ node.querySelectorAll('[data-plan-reps]').forEach(input=>input.oninput=()=>draft[Number(input.dataset.planReps)].pr=input.value===''?'':Number(input.value));
+ node.querySelectorAll('[data-plan-delete]').forEach(button=>button.onclick=()=>{draft.splice(Number(button.dataset.planDelete),1);draw()});
+ }
+ draw();
+ $('#planner-add-set').onclick=()=>{draft.push({...draft.at(-1)||{pw:0,pr:10}});draw()};
+ if(week>0)$('#planner-skip-exercise').onclick=()=>{draft.splice(0);draw()};
+ $('#planner-set-form').onsubmit=ev=>{
+ ev.preventDefault();
+ if(draft.some(s=>!Number.isFinite(s.pw)||s.pw<(e.weightMode==='bodyweight'?-300:0)||s.pw>1000||!Number.isInteger(s.pr)||s.pr<1||s.pr>200)){toast('Перевір вагу та повтори');return}
+ if(week===0)e.sets=structuredClone(draft);else{e.overrides??={};e.overrides[week]=structuredClone(draft)}
+ e.notes=$('#planner-exercise-note').value;if(e.weightMode==='bodyweight')e.bodyWeight=$('#planner-body-weight').value===''?'':Number($('#planner-body-weight').value);
+ save();$('#dialog').close();render();
+ };
+}
+function removePlannerExercise(index){plannerWorkout().exercises.splice(index,1);save();render()}
+function addPlannerExercise(){
+ const available=state.library.filter(e=>!e.deleted);
+ if(!available.length){toast('Додай вправи в «Мої вправи»');return}
+ modal('<h2>Додати вправу в план</h2><select id="planner-library-choice">'+available.map(e=>'<option value="'+e.id+'" '+(e.group===planKind?'':'')+'>'+esc(title(e.group)+' · '+e.name)+'</option>').join('')+'</select><button class="primary" id="planner-library-add">Додати</button><button class="secondary" onclick="document.querySelector(\'#dialog\').close()">Скасувати</button>');
+ const preferred=available.find(e=>e.group===planKind);if(preferred)$('#planner-library-choice').value=String(preferred.id);
+ $('#planner-library-add').onclick=()=>{
+ const e=available.find(x=>x.id===Number($('#planner-library-choice').value));if(!e)return;
+ plannerWorkout().exercises.push({uid:'plan-'+Date.now()+'-'+Math.random().toString(36).slice(2),id:e.id,name:e.name,weightMode:e.weightMode||'total',bodyWeight:'',sets:Array.from({length:3},()=>({pw:e.weight,pr:e.reps})),overrides:{},notes:''});
+ save();$('#dialog').close();render();
+ };
+}
+function choosePlannerHistory(){
+ const records=state.history.map((h,index)=>({h,index})).filter(x=>x.h.kind===planKind).sort((a,b)=>b.h.date.localeCompare(a.h.date)||b.index-a.index);
+ if(!records.length){toast('В історії ще немає '+title(planKind));return}
+ modal('<h2>Взяти перший тиждень з історії</h2><p>Це замінить лише базу цього типу в макроплані. Саме тренування й історія не зміняться.</p><select id="planner-history-choice">'+records.map(({h,index})=>'<option value="'+index+'">'+esc(h.date)+' · '+fmt(h.fact)+' кг</option>').join('')+'</select><button class="primary" id="planner-history-use">Використати як базу</button><button class="secondary" onclick="document.querySelector(\'#dialog\').close()">Скасувати</button>');
+ $('#planner-history-use').onclick=()=>{
+ const h=state.history[Number($('#planner-history-choice').value)],p=plannerWorkout();
+ p.exercises=(h.exercises||[]).map(planExerciseFromHistory).filter(e=>e.sets.length);p.source={date:h.date,key:h.key,fact:h.fact};
+ save();$('#dialog').close();render();
+ };
+}
+function resetPlannerOverrides(){
+ modal('<h2>Скинути ручні поправки?</h2><p>Тижні 2–6 цього типу знову рахуватимуться автоматично від бази. Історія тренувань не зміниться.</p><button class="primary" id="planner-reset-overrides">Скинути поправки</button><button class="secondary" onclick="document.querySelector(\'#dialog\').close()">Скасувати</button>');
+ $('#planner-reset-overrides').onclick=()=>{plannerWorkout().exercises.forEach(e=>e.overrides={});save();$('#dialog').close();render()};
+}
+function newMacroPlan(){
+ const current=plannerRoot();state.macroPlans??={};
+ const id=Math.max(...Object.keys(state.macroPlans).map(Number),Number(state.cycle))+1;
+ const copy=structuredClone(current);copy.id=id;copy.createdAt=new Date().toISOString();state.macroPlans[String(id)]=copy;planCycle=id;save();render();
 }
 
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render()});render();
