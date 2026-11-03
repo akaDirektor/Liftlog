@@ -23,14 +23,27 @@ function selectedHistory(){return state.history.filter(h=>historyKinds.includes(
 let trendMode='cycle',trendCycle=null;
 function trendDate(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function mondayOf(date){const d=new Date(date+'T12:00:00');d.setDate(d.getDate()-((d.getDay()+6)%7));return d}
+function cycleWeekStart(cycle,today){
+ const firstDate=state.history.filter(h=>Number(h.cycle)===Number(cycle)&&/^\d{4}-\d{2}-\d{2}$/.test(h.date)).map(h=>h.date).sort()[0];
+ return mondayOf(firstDate||today);
+}
+function calendarCycleWeek(h){
+ const monday=mondayOf(h.date),first=cycleWeekStart(h.cycle,h.date);
+ return Math.round((monday-first)/604800000)+1;
+}
 function trendWeeks(selected,mode=trendMode,cycle=trendCycle??state.cycle,today=localDate()){
- let weeks;
- if(mode==='recent'){
-  const monday=mondayOf(today);
-  weeks=Array.from({length:6},(_,i)=>{const d=new Date(monday);d.setDate(d.getDate()-(5-i)*7);const end=new Date(d);end.setDate(end.getDate()+6);return {label:'Тиждень '+(i+1),dateLabel:String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0'),start:trendDate(d),end:trendDate(end),current:i===5,plan:0,fact:0,count:0,kinds:[]}});
- }else weeks=Array.from({length:6},(_,i)=>({label:'Тиждень '+(i+1),week:i+1,cycle:Number(cycle),current:Number(cycle)===state.cycle&&i+1===state.week,plan:0,fact:0,count:0,kinds:[]}));
+ const first=mode==='recent'?mondayOf(today):cycleWeekStart(cycle,today);
+ if(mode==='recent')first.setDate(first.getDate()-35);
+ const weeks=Array.from({length:6},(_,i)=>{
+  const start=new Date(first);start.setDate(start.getDate()+i*7);
+  const end=new Date(start);end.setDate(end.getDate()+6);
+  const startDate=trendDate(start),endDate=trendDate(end);
+  return {label:'Тиждень '+(i+1),cycle:mode==='cycle'?Number(cycle):null,
+   dateLabel:startDate.slice(8)+'.'+startDate.slice(5,7)+'–'+endDate.slice(8)+'.'+endDate.slice(5,7),
+   start:startDate,end:endDate,current:today>=startDate&&today<=endDate,plan:0,fact:0,count:0,kinds:[]};
+ });
  selected.forEach(h=>{
-  const w=mode==='recent'?weeks.find(x=>h.date>=x.start&&h.date<=x.end):weeks.find(x=>Number(h.cycle)===x.cycle&&Number(h.week)===x.week);
+  const w=weeks.find(x=>recordInTrendWeek(h,x));
   if(!w)return;w.plan+=Number(h.plan)||0;w.fact+=Number(h.fact)||0;w.count++;if(!w.kinds.includes(h.kind))w.kinds.push(h.kind);
  });
  return weeks;
@@ -212,7 +225,7 @@ function progress(){
  const rows=state.history.map((h,index)=>({h,index})).filter(({h})=>historyKinds.includes(h.kind)).sort((a,b)=>b.h.date.localeCompare(a.h.date)||b.index-a.index);
  const filters='<div class="split history-filters" role="group" aria-label="Типи тренувань в історії">'+workoutKinds.map(kind=>'<button class="'+(historyKinds.includes(kind)?'selected':'')+'" aria-pressed="'+historyKinds.includes(kind)+'" onclick="toggleHistoryKind(\''+kind+'\')">'+(historyKinds.includes(kind)?'✓ ':'')+title(kind)+'</button>').join('')+'</div>';
  return filters+progressCharts()+timeAnalytics()+'<section class="card"><div class="row"><div><h2>Історія тренувань</h2><p>'+esc(historySelectionLabel())+' · '+rows.length+' записів</p></div><button class="secondary" onclick="downloadBackup()">Завантажити резервну копію</button></div>'+
- (rows.length?'<div class="history-list">'+rows.map(({h,index})=>'<button class="history-entry" onclick="showWorkoutHistory('+index+')"><span><b>'+esc(title(h.kind))+'</b><small>'+esc(h.date)+' · Цикл '+h.cycle+' · Тиждень '+h.week+'</small></span><span><b>'+fmt(h.fact)+' кг</b><small>'+h.done+' підходів · Деталі →</small></span></button>').join('')+'</div>':'<p style="margin-top:20px">'+(historyKinds.length?'Немає збережених результатів для вибраних тренувань.':'Вибери один або кілька типів тренувань.')+'</p>')+'</section>';
+ (rows.length?'<div class="history-list">'+rows.map(({h,index})=>'<button class="history-entry" onclick="showWorkoutHistory('+index+')"><span><b>'+esc(title(h.kind))+'</b><small>'+esc(h.date)+' · Цикл '+h.cycle+' · Тиждень '+calendarCycleWeek(h)+'</small></span><span><b>'+fmt(h.fact)+' кг</b><small>'+h.done+' підходів · Деталі →</small></span></button>').join('')+'</div>':'<p style="margin-top:20px">'+(historyKinds.length?'Немає збережених результатів для вибраних тренувань.':'Вибери один або кілька типів тренувань.')+'</p>')+'</section>';
 }
 
 let historyDraft=null,historyDraftIndex=-1;
@@ -630,7 +643,10 @@ function timeStatsValues(s){return {
  density:s.pairedSeconds?s.pairedVolume/(s.pairedSeconds/60):null,
  reps:s.workSeconds?s.repetitions/(s.workSeconds/60):null
 }}
-function recordsInTrendWeek(records,w){return records.filter(h=>trendMode==='recent'?h.date>=w.start&&h.date<=w.end:Number(h.cycle)===w.cycle&&Number(h.week)===w.week)}
+function recordInTrendWeek(h,w){
+ return (w.cycle===null||Number(h.cycle)===w.cycle)&&h.date>=w.start&&h.date<=w.end;
+}
+function recordsInTrendWeek(records,w){return records.filter(h=>recordInTrendWeek(h,w))}
 function analyticsBars(weeks,series){
  const max=Math.max(1,...weeks.flatMap(w=>series.map(s=>w.values[s.key]??0)));
  return '<div class="analytics-chart">'+weeks.map(w=>'<div class="analytics-week"><div class="analytics-bars">'+series.map(s=>{
